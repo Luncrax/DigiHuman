@@ -1,0 +1,647 @@
+/* Element Plus CSS Variables and Styles */
+:root {
+  --el-color-primary: #409eff;
+  --el-color-primary-light-3: #79bbff;
+  --el-color-primary-light-5: #a0cfff;
+  --el-color-primary-light-7: #c6e2ff;
+  --el-color-primary-light-8: #d9ecff;
+  --el-color-primary-light-9: #ecf5ff;
+  --el-color-primary-dark-2: #337ecc;
+  --el-color-success: #67c23a;
+  --el-color-warning: #e6a23c;
+  --el-color-danger: #f56c6c;
+  --el-color-info: #909399;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f2f3f5;
+  --el-bg-color-overlay: #ffffff;
+  --el-border-color: #dcdfe6;
+  --el-border-color-light: #e4e7ed;
+  --el-border-color-lighter: #ebeef5;
+  --el-border-color-extra-light: #f2f6fc;
+  --el-text-color-primary: #303133;
+  --el-text-color-regular: #606266;
+  --el-text-color-secondary: #909399;
+  --el-text-color-placeholder: #c0c4cc;
+  --el-box-shadow: 0 12px 32px 4px rgba(0, 0, 0, 0.04), 0 8px 20px rgba(0, 0, 0, 0.08);
+  --el-box-shadow-light: 0 0 12px rgba(0, 0, 0, 0.12);
+  --el-box-shadow-lighter: 0 0 6px rgba(0, 0, 0, 0.12);
+  --el-box-shadow-dark: 0 16px 48px 16px rgba(0, 0, 0, 0.08), 0 12px 30px rgba(0, 0, 0, 0.12);
+  --el-disabled-bg-color: var(--el-border-color-extra-light);
+  --el-disabled-text-color: var(--el-text-color-placeholder);
+  --el-disabled-border-color: var(--el-border-color-light);
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 2px;
+  --el-border-radius: 8px;
+  --el-border-radius-large: 12px;
+  --el-border-radius-full: 9999px;
+  --el-font-size-extra-large: 20px;
+  --el-font-size-large: 18px;
+  --el-font-size-medium: 16px;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+  --el-font-weight-primary: 500;
+  --el-font-weight-semibold: 600;
+  --el-font-line-height-primary: 24px;
+  --el-font-line-height-medium: 20px;
+  --el-component-size-large: 48px;
+  --el-component-size: 40px;
+  --el-component-size-small: 32px;
+}
+
+/* 苹果风格的Element Plus组件 */
+.el-button {
+  border-radius: 25px;
+  padding: 12px 24px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+}
+
+.el-button--primary {
+  background: rgba(102, 126, 234, 0.3);
+  color: white;
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.el-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border-color: transparent;
+}
+
+.el-input__wrapper {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+}
+
+.el-input__wrapper.is-focus {
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+
+.el-input__inner {
+  color: white;
+  background: transparent;
+}
+
+.el-input__inner::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.el-container {
+  background: transparent;
+}
+
+.el-header {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px 24px;
+}
+
+.el-main {
+  background: transparent;
+  padding: 20px;
+}
+
+.el-aside {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.el-footer {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的对话框 */
+.el-dialog {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border-color: transparent;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 20px 24px 16px;
+}
+
+.el-dialog__body {
+  padding: 20px 24px;
+  color: white;
+}
+
+/* 苹果风格的标签页 */
+.el-tabs__nav-wrap::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.el-tabs__item {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.el-tabs__item.is-active {
+  color: white;
+}
+
+/* 苹果风格的滑块 */
+.el-slider__runway {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.el-slider__bar {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+.el-slider__button {
+  background: rgba(102, 126, 234, 0.3);
+  border: 2px solid white;
+}
+
+/* 苹果风格的开关 */
+.el-switch__core {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.el-switch.is-checked .el-switch__core {
+  background: rgba(102, 126, 234, 0.5);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+/* 苹果风格的进度条 */
+.el-progress-bar__outer {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.el-progress-bar__inner {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 苹果风格的表格 */
+.el-table {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.el-table th {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.el-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的下拉菜单 */
+.el-dropdown-menu {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border-color: transparent;
+}
+
+/* 苹果风格的菜单 */
+.el-menu {
+  background: transparent;
+  border: none;
+}
+
+.el-sub-menu__title, .el-menu-item {
+  color: white;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+.el-sub-menu__title:hover, .el-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的导航栏 */
+.el-menu--horizontal {
+  border-bottom: none;
+}
+
+/* 苹果风格的标签 */
+.el-tag {
+  background: rgba(102, 126, 234, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  color: white;
+}
+
+/* 苹果风格的警告框 */
+.el-alert {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的加载动画 */
+.el-loading-mask {
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border-radius: 20px;
+}
+
+/* 苹果风格的工具提示 */
+.el-tooltip__popper {
+  background: rgba(25, 25, 25, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* 苹果风格的分页 */
+.el-pagination {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的步骤条 */
+.el-steps {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的折叠面板 */
+.el-collapse-item__header {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 8px;
+}
+
+/* 苹果风格的上传组件 */
+.el-upload {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的日期选择器 */
+.el-picker-panel {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* 苹果风格的输入框组 */
+.el-input-group__append, .el-input-group__prepend {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+/* 苹果风格的文本域 */
+.el-textarea__inner {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  color: white;
+}
+
+.el-textarea__inner::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* 苹果风格的复选框 */
+.el-checkbox__input .el-checkbox__inner {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+/* 苹果风格的单选框 */
+.el-radio__input .el-radio__inner {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  background: white;
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.el-radio__input.is-checked .el-radio__inner::after {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+/* 苹果风格的级联选择器 */
+.el-cascader-menu {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的树形控件 */
+.el-tree {
+  background: transparent;
+}
+
+.el-tree-node__content {
+  height: 40px;
+  border-radius: 8px;
+  margin: 2px 0;
+}
+
+.el-tree-node__content:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的时间选择器 */
+.el-time-panel {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* 苹果风格的评分组件 */
+.el-rate__icon {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.el-rate__icon.hover, .el-rate__icon.active {
+  color: #f7ba2a;
+}
+
+/* 苹果风格的头像组件 */
+.el-avatar {
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的徽章组件 */
+.el-badge__content.is-fixed {
+  background: #f56c6c;
+  border: 1px solid white;
+}
+
+/* 苹果风格的骨架屏 */
+.el-skeleton {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+/* 苹果风格的分割线 */
+.el-divider__text {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 苹果风格的弹出框 */
+.el-popover {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  border-color: transparent;
+  color: white;
+}
+
+/* 苹果风格的步骤条 */
+.el-step__head.is-process {
+  color: rgba(102, 126, 234, 0.5);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.el-step__head.is-finish {
+  color: #67c23a;
+  border-color: #67c23a;
+}
+
+/* 苹果风格的滑块选择器 */
+.el-slider__stop {
+  background: rgba(102, 126, 234, 0.3);
+}
+
+/* 苹果风格的输入数字 */
+.el-input-number__decrease, .el-input-number__increase {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的分割面板 */
+.el-splitter {
+  background: transparent;
+}
+
+.el-splitter__pane {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的虚拟滚动 */
+.el-vl__item {
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+/* 苹果风格的虚拟滚动容器 */
+.el-vl__container {
+  border-radius: 12px;
+}
+
+/* 苹果风格的虚拟滚动条 */
+.el-scrollbar__bar.is-horizontal {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.el-scrollbar__bar.is-vertical {
+  width: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 苹果风格的虚拟滚动条滑块 */
+.el-scrollbar__thumb {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+}
+
+/* 苹果风格的虚拟滚动条悬停效果 */
+.el-scrollbar__bar:hover, .el-scrollbar__bar.is-active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的虚拟滚动条滑块悬停效果 */
+.el-scrollbar__thumb:hover, .el-scrollbar__thumb.is-active {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* 苹果风格的虚拟滚动条容器 */
+.el-scrollbar {
+  border-radius: 12px;
+}
+
+/* 苹果风格的虚拟滚动条内容区域 */
+.el-scrollbar__wrap {
+  border-radius: 12px;
+}
+
+/* 苹果风格的虚拟滚动条视口 */
+.el-scrollbar__view {
+  border-radius: 12px;
+}
+
+/* 苹果风格的虚拟滚动条滑块圆角 */
+.el-scrollbar__thumb {
+  border-radius: 4px;
+}
+
+/* 苹果风格的虚拟滚动条边框 */
+.el-scrollbar__bar {
+  border-radius: 4px;
+}
+
+/* 苹果风格的虚拟滚动条背景 */
+.el-scrollbar__bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的虚拟滚动条滑块背景 */
+.el-scrollbar__thumb {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的虚拟滚动条滑块悬停背景 */
+.el-scrollbar__thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 苹果风格的虚拟滚动条滑块激活背景 */
+.el-scrollbar__thumb.is-active {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* 苹果风格的虚拟滚动条水平边框 */
+.el-scrollbar__bar.is-horizontal {
+  border-radius: 4px;
+}
+
+/* 苹果风格的虚拟滚动条垂直边框 */
+.el-scrollbar__bar.is-vertical {
+  border-radius: 4px;
+}
+
+/* 苹果风格的虚拟滚动条水平背景 */
+.el-scrollbar__bar.is-horizontal {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的虚拟滚动条垂直背景 */
+.el-scrollbar__bar.is-vertical {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 苹果风格的虚拟滚动条水平滑块背景 */
+.el-scrollbar__thumb.is-horizontal {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的虚拟滚动条垂直滑块背景 */
+.el-scrollbar__thumb.is-vertical {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 苹果风格的虚拟滚动条水平滑块悬停背景 */
+.el-scrollbar__thumb.is-horizontal:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 苹果风格的虚拟滚动条垂直滑块悬停背景 */
+.el-scrollbar__thumb.is-vertical:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 苹果风格的虚拟滚动条水平滑块激活背景 */
+.el-scrollbar__thumb.is-horizontal.is-active {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* 苹果风格的虚拟滚动条垂直滑块激活背景 */
+.el-scrollbar__thumb.is-vertical.is-active {
+  background: rgba(255, 255, 255, 0.7);
+}
