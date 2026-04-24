@@ -128,7 +128,35 @@
             class="flex-1"
             :disabled="!connected"
           />
-          <el-button type="primary" @click="sendMessage" :disabled="!connected">发送</el-button>
+          <el-button 
+            type="primary" 
+            @click="sendMessage" 
+            :disabled="!connected"
+          >
+            发送
+          </el-button>
+          <el-button 
+            :type="isRecording ? 'danger' : 'default'" 
+            @click="toggleVoiceRecording"
+            :disabled="!connected"
+            :icon="Microphone"
+            circle
+            :title="isRecording ? '停止录音' : '开始语音输入'"
+          />
+        </div>
+        
+        <!-- 录音状态显示 -->
+        <div v-if="isRecording" class="mt-3 flex items-center gap-2">
+          <div class="recording-indicator flex items-center gap-2 px-3 py-1 bg-red-50 rounded-full">
+            <span class="recording-dot w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            <span class="text-sm text-red-600">正在录音...</span>
+          </div>
+          <div class="audio-level flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              class="h-full bg-red-500 transition-all duration-100"
+              :style="{ width: audioLevel + '%' }"
+            ></div>
+          </div>
         </div>
       </div>
     </div>
@@ -185,7 +213,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Search, MoreFilled, View, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, MoreFilled, View, Edit, Delete, Microphone } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useAudioRecorder } from '@/composables/useAudioRecorder'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const inputMessage = ref('')
 const messages = ref([
@@ -201,8 +232,31 @@ const renameDialogVisible = ref(false)
 const previewHistory = ref(null)
 const newHistoryName = ref('')
 const selectedHistoryUid = ref(null)
+
+// 语音相关状态
+const isRecording = ref(false)
+const isPlayingAudio = ref(false)
 let ws = null
 let clientId = localStorage.getItem('digiHuman_clientId') || null
+
+// 语音录制和播放
+const { 
+  isRecording: recorderIsRecording, 
+  audioLevel, 
+  hasPermission: recorderHasPermission,
+  errorMessage: recorderError,
+  requestPermission,
+  startRecording,
+  stopRecording,
+  cancelRecording
+} = useAudioRecorder()
+
+const {
+  isPlaying: playerIsPlaying,
+  isLoading: playerIsLoading,
+  playBase64Audio,
+  stopPlayback
+} = useAudioPlayer()
 
 // 从localStorage恢复会话数据
 const restoreSession = () => {
@@ -353,8 +407,10 @@ const filteredHistories = computed(() => {
 // 连接WebSocket
 const connectWebSocket = () => {
   try {
+    // 连接到后端WebSocket服务
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsHost = window.location.host
+    // 使用固定的后端端口8001
+    const wsHost = window.location.hostname + ':8001'
     ws = new WebSocket(`${wsProtocol}//${wsHost}/ws`)
     
     ws.onopen = () => {
@@ -408,14 +464,32 @@ const handleWebSocketMessage = (data) => {
     case 'full-text':
       const content = data.message || data.text
       if (content) {
+        // 检查是否有语音识别的文本
+        if (data.user_text) {
+          // 添加用户的语音输入
+          messages.value.push({ role: 'user', content: data.user_text })
+        }
+        // 添加助手的响应
         messages.value.push({ role: 'assistant', content })
         saveSession() // 保存会话
         scrollToBottom()
+        
+        // 如果有音频数据，播放TTS音频
+        if (data.audio) {
+          isPlayingAudio.value = true
+          playBase64Audio(data.audio, 'audio/mpeg').catch(err => {
+            console.error('TTS playback error:', err)
+          }).finally(() => {
+            isPlayingAudio.value = false
+          })
+        }
       }
       break
       
     case 'error':
-      messages.value.push({ role: 'assistant', content: '错误: ' + data.message })
+      const errorMessage = '错误: ' + data.message
+      messages.value.push({ role: 'assistant', content: errorMessage })
+      ElMessage.error(data.message || '处理失败，请重试')
       scrollToBottom()
       break
       
@@ -565,6 +639,49 @@ const sendMessage = () => {
     text: message,
     client_id: clientId
   }))
+}
+
+// 切换语音录制状态
+const toggleVoiceRecording = async () => {
+  if (isRecording.value) {
+    // 停止录音并发送
+    const audioBase64 = await stopRecording()
+    isRecording.value = false
+    
+    if (audioBase64) {
+      // 显示处理中提示
+      ElMessage.info('正在处理语音，请稍候...')
+      
+      // 发送音频数据到后端
+      ws.send(JSON.stringify({
+        type: 'mic-audio-data',
+        audio: audioBase64,
+        client_id: clientId
+      }))
+      
+      // 发送结束标记
+      ws.send(JSON.stringify({
+        type: 'mic-audio-end',
+        client_id: clientId
+      }))
+    } else {
+      ElMessage.warning('录音失败，请重试')
+    }
+  } else {
+    // 请求权限并开始录音
+    const hasPermission = await requestPermission()
+    if (!hasPermission) {
+      ElMessage.error(recorderError.value || '无法获取麦克风权限')
+      return
+    }
+    
+    const started = await startRecording()
+    if (started) {
+      isRecording.value = true
+    } else {
+      ElMessage.error('启动录音失败，请检查麦克风权限')
+    }
+  }
 }
 
 // 滚动到底部

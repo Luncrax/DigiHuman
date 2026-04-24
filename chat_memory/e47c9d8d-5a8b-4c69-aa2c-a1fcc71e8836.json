@@ -1,0 +1,18 @@
+[
+  {
+    "role": "user",
+    "content": "你好"
+  },
+  {
+    "role": "assistant",
+    "content": "抱歉，我在处理您的消息时遇到了问题。请稍后再试。"
+  },
+  {
+    "role": "user",
+    "content": "你好"
+  },
+  {
+    "role": "assistant",
+    "content": "抱歉，我在处理您的消息时遇到了问题。请稍后再试。"
+  }
+]

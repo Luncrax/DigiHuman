@@ -1,0 +1,16 @@
+[
+  {
+    "role": "metadata",
+    "timestamp": "2026-04-21T15:42:19"
+  },
+  {
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-21T15:42:19"
+  },
+  {
+    "role": "ai",
+    "content": "你好，有什么可以帮你的？",
+    "timestamp": "2026-04-21T15:42:19"
+  }
+]

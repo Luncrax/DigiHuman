@@ -13,11 +13,12 @@ from backend.langchain.models.llm_service import LangChainLLMService
 from backend.langchain.memory.memory_manager import LangChainMemoryManager
 from backend.langchain.services.dialogue_service import LangChainDialogueService
 from backend.core.config import config
-from backend.asr.openai_whisper_asr import OpenAIWhisperASR
-from backend.tts.openai_tts import OpenAITTS
+from backend.asr import get_asr_service
+from backend.tts import get_tts_service
 from backend.live2d.live2d_model import Live2DModel, Live2DModelConfig
 from backend.history_manager import HistoryManager
 from backend.context_manager import ContextManager
+from backend.emotion.langchain_emotion_analyzer import get_emotion_analyzer, analyze_emotion
 
 
 class WebSocketHandler:
@@ -35,8 +36,9 @@ class WebSocketHandler:
         self.llm_service = LangChainLLMService()
         self.memory_manager = LangChainMemoryManager()
         self.dialogue_service = LangChainDialogueService()
-        self.asr_service = OpenAIWhisperASR() if config.ASR_ENABLED else None
-        self.tts_service = OpenAITTS() if config.TTS_ENABLED else None
+        self.emotion_analyzer = get_emotion_analyzer()
+        self.asr_service = get_asr_service() if config.ASR_ENABLED else None
+        self.tts_service = get_tts_service() if config.TTS_ENABLED else None
         self.live2d_model = None
         if config.LIVE2D_ENABLED and config.LIVE2D_MODEL_PATH:
             try:
@@ -146,7 +148,7 @@ class WebSocketHandler:
             logger.warning(f"Unknown message type: {msg_type}")
     
     async def handle_chat_message(self, websocket: WebSocket, client_uid: str, data: dict):
-        """Handle incoming chat messages"""
+        """Handle incoming chat messages with emotion analysis"""
         message = data.get("message", "")
         if not message:
             return
@@ -155,6 +157,22 @@ class WebSocketHandler:
             # Get context to check for active history
             context = self.client_contexts.get(client_uid)
             history_uid = context.history_uid if context else None
+            
+            # 分析用户消息情感
+            user_emotion = await analyze_emotion(message, self.llm_service)
+            logger.info(f"User message emotion: {user_emotion.emotion} ({user_emotion.confidence})")
+            
+            # 发送用户情感到前端
+            await websocket.send_text(
+                json.dumps({
+                    "type": "emotion_update",
+                    "source": "user",
+                    "emotion": user_emotion.emotion,
+                    "confidence": user_emotion.confidence,
+                    "intensity": user_emotion.intensity,
+                    "details": user_emotion.details
+                })
+            )
             
             # Process the message using dialogue service
             result = await self.dialogue_service.process_message(
@@ -165,19 +183,61 @@ class WebSocketHandler:
             # Extract response from the result
             response = result.get("response", "Error: No response generated")
             
+            # 分析助手回复情感
+            assistant_emotion = await analyze_emotion(response, self.llm_service)
+            logger.info(f"Assistant response emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
+            
+            # 获取Live2D控制指令
+            live2d_command = None
+            if self.live2d_model:
+                live2d_command = self.live2d_model.get_emotion_control_command(assistant_emotion)
+                # 更新Live2D模型状态
+                self.live2d_model.control_live2d_by_emotion(assistant_emotion)
+            
             # Save conversation to history manager if history is active
             if history_uid:
                 self.history_manager.store_message(client_uid, history_uid, "human", message)
                 self.history_manager.store_message(client_uid, history_uid, "ai", response)
             
+            # 构建响应数据
+            response_data = {
+                "type": "chat_response",
+                "message": response,
+                "client_id": client_uid,
+                "emotion": {
+                    "user": {
+                        "emotion": user_emotion.emotion,
+                        "confidence": user_emotion.confidence,
+                        "intensity": user_emotion.intensity
+                    },
+                    "assistant": {
+                        "emotion": assistant_emotion.emotion,
+                        "confidence": assistant_emotion.confidence,
+                        "intensity": assistant_emotion.intensity
+                    }
+                }
+            }
+            
+            # 添加Live2D控制指令
+            if live2d_command:
+                response_data["live2d_command"] = live2d_command
+            
             # Send response back to client
+            await websocket.send_text(json.dumps(response_data))
+            
+            # 发送助手情感更新
             await websocket.send_text(
                 json.dumps({
-                    "type": "chat_response",
-                    "message": response,
-                    "client_id": client_uid
+                    "type": "emotion_update",
+                    "source": "assistant",
+                    "emotion": assistant_emotion.emotion,
+                    "confidence": assistant_emotion.confidence,
+                    "intensity": assistant_emotion.intensity,
+                    "details": assistant_emotion.details,
+                    "live2d_command": live2d_command
                 })
             )
+            
         except Exception as e:
             logger.error(f"Error processing chat message: {e}")
             import traceback
@@ -190,7 +250,7 @@ class WebSocketHandler:
             )
     
     async def handle_text_input(self, websocket: WebSocket, client_uid: str, data: dict):
-        """Handle text input from frontend"""
+        """Handle text input from frontend with emotion analysis"""
         text = data.get("text", "")
         if not text:
             return
@@ -199,6 +259,22 @@ class WebSocketHandler:
             # Get context to check for active history
             context = self.client_contexts.get(client_uid)
             history_uid = context.history_uid if context else None
+            
+            # 分析用户消息情感
+            user_emotion = await analyze_emotion(text, self.llm_service)
+            logger.info(f"User text emotion: {user_emotion.emotion} ({user_emotion.confidence})")
+            
+            # 发送用户情感到前端
+            await websocket.send_text(
+                json.dumps({
+                    "type": "emotion_update",
+                    "source": "user",
+                    "emotion": user_emotion.emotion,
+                    "confidence": user_emotion.confidence,
+                    "intensity": user_emotion.intensity,
+                    "details": user_emotion.details
+                })
+            )
             
             # Process the text using dialogue service
             result = await self.dialogue_service.process_message(
@@ -209,19 +285,75 @@ class WebSocketHandler:
             # Extract response from the result
             response = result.get("response", "Error: No response generated")
             
+            # 分析助手回复情感
+            assistant_emotion = await analyze_emotion(response, self.llm_service)
+            logger.info(f"Assistant response emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
+            
+            # 获取Live2D控制指令
+            live2d_command = None
+            if self.live2d_model:
+                live2d_command = self.live2d_model.get_emotion_control_command(assistant_emotion)
+                # 更新Live2D模型状态
+                self.live2d_model.control_live2d_by_emotion(assistant_emotion)
+            
             # Save conversation to history manager if history is active
             if history_uid:
                 self.history_manager.store_message(client_uid, history_uid, "human", text)
                 self.history_manager.store_message(client_uid, history_uid, "ai", response)
             
+            # Prepare response data
+            response_data = {
+                "type": "full-text",
+                "text": response,
+                "client_id": client_uid,
+                "emotion": {
+                    "user": {
+                        "emotion": user_emotion.emotion,
+                        "confidence": user_emotion.confidence,
+                        "intensity": user_emotion.intensity
+                    },
+                    "assistant": {
+                        "emotion": assistant_emotion.emotion,
+                        "confidence": assistant_emotion.confidence,
+                        "intensity": assistant_emotion.intensity
+                    }
+                }
+            }
+            
+            # 添加Live2D控制指令
+            if live2d_command:
+                response_data["live2d_command"] = live2d_command
+            
+            # If TTS is enabled, synthesize speech
+            if self.tts_service:
+                try:
+                    audio_response = await self.tts_service.async_synthesize(
+                        response,
+                        voice=config.TTS_VOICE,
+                        model=config.TTS_MODEL
+                    )
+                    # Encode audio to base64 for transmission
+                    import base64
+                    response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
+                except Exception as e:
+                    logger.error(f"TTS synthesis error: {e}")
+            
             # Send response back to client
+            await websocket.send_text(json.dumps(response_data))
+            
+            # 发送助手情感更新和Live2D指令
             await websocket.send_text(
                 json.dumps({
-                    "type": "full-text",
-                    "text": response,
-                    "client_id": client_uid
+                    "type": "emotion_update",
+                    "source": "assistant",
+                    "emotion": assistant_emotion.emotion,
+                    "confidence": assistant_emotion.confidence,
+                    "intensity": assistant_emotion.intensity,
+                    "details": assistant_emotion.details,
+                    "live2d_command": live2d_command
                 })
             )
+            
         except Exception as e:
             logger.error(f"Error processing text input: {e}")
             import traceback
@@ -234,7 +366,7 @@ class WebSocketHandler:
             )
     
     async def handle_audio_data(self, websocket: WebSocket, client_uid: str, data: dict):
-        """Handle incoming audio data"""
+        """Handle incoming audio data with emotion analysis"""
         if not self.asr_service:
             logger.warning("ASR service not available")
             await websocket.send_text(
@@ -257,6 +389,24 @@ class WebSocketHandler:
                 text = await self.asr_service.async_transcribe(audio_data)
                 logger.info(f"ASR transcription: {text}")
 
+                if text and text != "[语音识别失败]":
+                    # 分析用户语音情感
+                    user_emotion = await analyze_emotion(text, self.llm_service)
+                    logger.info(f"User audio emotion: {user_emotion.emotion} ({user_emotion.confidence})")
+                    
+                    # 发送用户情感到前端
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "emotion_update",
+                            "source": "user",
+                            "emotion": user_emotion.emotion,
+                            "confidence": user_emotion.confidence,
+                            "intensity": user_emotion.intensity,
+                            "details": user_emotion.details,
+                            "text": text
+                        })
+                    )
+
                 # Process the transcribed text using dialogue service
                 result = await self.dialogue_service.process_message(
                     message=text,
@@ -266,10 +416,44 @@ class WebSocketHandler:
                 # Extract response from the result
                 response_text = result.get("response", "Error: No response generated")
 
+                # 分析助手回复情感
+                assistant_emotion = await analyze_emotion(response_text, self.llm_service)
+                logger.info(f"Assistant response emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
+                
+                # 获取Live2D控制指令
+                live2d_command = None
+                if self.live2d_model:
+                    live2d_command = self.live2d_model.get_emotion_control_command(assistant_emotion)
+                    # 更新Live2D模型状态
+                    self.live2d_model.control_live2d_by_emotion(assistant_emotion)
+
                 # Save conversation to history manager if history is active
                 if history_uid:
                     self.history_manager.store_message(client_uid, history_uid, "human", text)
                     self.history_manager.store_message(client_uid, history_uid, "ai", response_text)
+
+                # 构建响应数据
+                response_data = {
+                    "type": "chat_response",
+                    "message": response_text,
+                    "client_id": client_uid,
+                    "emotion": {
+                        "user": {
+                            "emotion": user_emotion.emotion if text and text != "[语音识别失败]" else "neutral",
+                            "confidence": user_emotion.confidence if text and text != "[语音识别失败]" else 0.5,
+                            "intensity": user_emotion.intensity if text and text != "[语音识别失败]" else "low"
+                        },
+                        "assistant": {
+                            "emotion": assistant_emotion.emotion,
+                            "confidence": assistant_emotion.confidence,
+                            "intensity": assistant_emotion.intensity
+                        }
+                    }
+                }
+                
+                # 添加Live2D控制指令
+                if live2d_command:
+                    response_data["live2d_command"] = live2d_command
 
                 # If TTS is enabled, convert response to audio
                 if self.tts_service:
@@ -280,36 +464,28 @@ class WebSocketHandler:
                             model=config.TTS_MODEL
                         )
                         
-                        # Send both text and audio response
-                        await websocket.send_text(
-                            json.dumps({
-                                "type": "chat_response",
-                                "message": response_text,
-                                "audio": audio_response.decode('latin1') if isinstance(audio_response, bytes) else audio_response,
-                                "client_id": client_uid
-                            })
-                        )
+                        # Encode audio to base64 for transmission
+                        import base64
+                        response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
                     except Exception as e:
                         logger.error(f"Error in TTS synthesis: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        # Send text response only
-                        await websocket.send_text(
-                            json.dumps({
-                                "type": "chat_response",
-                                "message": response_text,
-                                "client_id": client_uid
-                            })
-                        )
-                else:
-                    # Send text response only
-                    await websocket.send_text(
-                        json.dumps({
-                            "type": "chat_response",
-                            "message": response_text,
-                            "client_id": client_uid
-                        })
-                    )
+
+                # Send response back to client
+                await websocket.send_text(json.dumps(response_data))
+                
+                # 发送助手情感更新
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "emotion_update",
+                        "source": "assistant",
+                        "emotion": assistant_emotion.emotion,
+                        "confidence": assistant_emotion.confidence,
+                        "intensity": assistant_emotion.intensity,
+                        "details": assistant_emotion.details,
+                        "live2d_command": live2d_command
+                    })
+                )
+                
             except Exception as e:
                 logger.error(f"Error processing audio data: {e}")
                 import traceback
@@ -330,17 +506,62 @@ class WebSocketHandler:
     
     async def handle_mic_audio_data(self, websocket: WebSocket, client_uid: str, data: dict):
         """Handle microphone audio data"""
-        audio_data = data.get("audio", [])
+        audio_data = data.get("audio", "")
         if audio_data:
-            # Append audio data to buffer for this client
-            self.received_data_buffers[client_uid].extend(audio_data)
+            # Store base64 audio data directly for single-packet transmission
+            self.received_data_buffers[client_uid] = audio_data
     
     async def handle_mic_audio_end(self, websocket: WebSocket, client_uid: str, data: dict):
-        """Handle end of microphone audio input"""
+        """Handle end of microphone audio input with emotion analysis"""
         # Get the accumulated audio data for this client
-        audio_buffer = self.received_data_buffers[client_uid]
-        if not audio_buffer:
-            logger.warning(f"No audio data in buffer for client {client_uid}")
+        audio_data = self.received_data_buffers.get(client_uid, "")
+        
+        # Support both base64 format and legacy byte list format
+        audio_bytes = None
+        if isinstance(audio_data, str) and audio_data:
+            # Base64 format - decode to bytes
+            try:
+                import base64
+                audio_bytes = base64.b64decode(audio_data)
+                logger.info(f"Successfully decoded base64 audio data: {len(audio_bytes)} bytes")
+            except Exception as e:
+                logger.error(f"Failed to decode base64 audio: {e}")
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "error",
+                        "message": "音频数据格式错误，请重试"
+                    })
+                )
+                # Clear the audio buffer
+                self.received_data_buffers[client_uid] = []
+                return
+        elif isinstance(audio_data, list) and audio_data:
+            # Legacy byte list format
+            try:
+                audio_bytes = bytes(audio_data)
+                logger.info(f"Successfully converted byte list to bytes: {len(audio_bytes)} bytes")
+            except Exception as e:
+                logger.error(f"Failed to convert byte list to bytes: {e}")
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "error",
+                        "message": "音频数据处理错误，请重试"
+                    })
+                )
+                # Clear the audio buffer
+                self.received_data_buffers[client_uid] = []
+                return
+        
+        if not audio_bytes:
+            logger.warning(f"No valid audio data for client {client_uid}")
+            await websocket.send_text(
+                json.dumps({
+                    "type": "error",
+                    "message": "未接收到有效的音频数据，请重试"
+                })
+            )
+            # Clear the audio buffer
+            self.received_data_buffers[client_uid] = []
             return
 
         if not self.asr_service:
@@ -348,9 +569,11 @@ class WebSocketHandler:
             await websocket.send_text(
                 json.dumps({
                     "type": "error",
-                    "message": "ASR service not enabled"
+                    "message": "语音识别服务未启用"
                 })
             )
+            # Clear the audio buffer
+            self.received_data_buffers[client_uid] = []
             return
 
         try:
@@ -358,10 +581,40 @@ class WebSocketHandler:
             context = self.client_contexts.get(client_uid)
             history_uid = context.history_uid if context else None
             
-            # Convert audio buffer to bytes for ASR processing
-            audio_bytes = bytes(audio_buffer)
+            # Transcribe audio to text using ASR service
+            logger.info(f"Starting ASR transcription for client {client_uid}")
             text = await self.asr_service.async_transcribe(audio_bytes)
-            logger.info(f"ASR transcription: {text}")
+            logger.info(f"ASR transcription result for client {client_uid}: '{text}' (type: {type(text)})")
+
+            # Check if transcription failed
+            if text is None or text == "None" or not text or text == "[语音识别失败]":
+                logger.warning(f"ASR transcription failed for client {client_uid}")
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "error",
+                        "message": "语音识别失败，请重试"
+                    })
+                )
+                # Clear the audio buffer
+                self.received_data_buffers[client_uid] = []
+                return
+
+            # 分析用户语音情感
+            user_emotion = await analyze_emotion(text, self.llm_service)
+            logger.info(f"User mic audio emotion: {user_emotion.emotion} ({user_emotion.confidence})")
+            
+            # 发送用户情感到前端
+            await websocket.send_text(
+                json.dumps({
+                    "type": "emotion_update",
+                    "source": "user",
+                    "emotion": user_emotion.emotion,
+                    "confidence": user_emotion.confidence,
+                    "intensity": user_emotion.intensity,
+                    "details": user_emotion.details,
+                    "text": text
+                })
+            )
 
             # Process the transcribed text using dialogue service
             result = await self.dialogue_service.process_message(
@@ -372,22 +625,84 @@ class WebSocketHandler:
             # Extract response from the result
             response_text = result.get("response", "Error: No response generated")
 
+            # 分析助手回复情感
+            assistant_emotion = await analyze_emotion(response_text, self.llm_service)
+            logger.info(f"Assistant response emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
+            
+            # 获取Live2D控制指令
+            live2d_command = None
+            if self.live2d_model:
+                live2d_command = self.live2d_model.get_emotion_control_command(assistant_emotion)
+                # 更新Live2D模型状态
+                self.live2d_model.control_live2d_by_emotion(assistant_emotion)
+
             # Save conversation to history manager if history is active
             if history_uid:
                 self.history_manager.store_message(client_uid, history_uid, "human", text)
                 self.history_manager.store_message(client_uid, history_uid, "ai", response_text)
 
+            # Prepare response data
+            response_data = {
+                "type": "full-text",
+                "text": response_text,
+                "user_text": text or "",
+                "client_id": client_uid,
+                "emotion": {
+                    "user": {
+                        "emotion": user_emotion.emotion,
+                        "confidence": user_emotion.confidence,
+                        "intensity": user_emotion.intensity
+                    },
+                    "assistant": {
+                        "emotion": assistant_emotion.emotion,
+                        "confidence": assistant_emotion.confidence,
+                        "intensity": assistant_emotion.intensity
+                    }
+                }
+            }
+            logger.info(f"Response data prepared for client {client_uid}: {response_data}")
+            logger.info(f"user_text field value: '{response_data['user_text']}' (type: {type(response_data['user_text'])})")
+            
+            # 添加Live2D控制指令
+            if live2d_command:
+                response_data["live2d_command"] = live2d_command
+            
+            # If TTS is enabled, synthesize speech
+            if self.tts_service:
+                try:
+                    audio_response = await self.tts_service.async_synthesize(
+                        response_text,
+                        voice=config.TTS_VOICE,
+                        model=config.TTS_MODEL
+                    )
+                    # Encode audio to base64 for transmission
+                    import base64
+                    response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
+                    logger.info(f"TTS synthesis successful for client {client_uid}")
+                except Exception as e:
+                    logger.error(f"TTS synthesis error: {e}")
+                    # Continue without audio if TTS fails
+
             # Send response back to client
+            await websocket.send_text(json.dumps(response_data))
+            logger.info(f"Response sent to client {client_uid}")
+            
+            # 发送助手情感更新
             await websocket.send_text(
                 json.dumps({
-                    "type": "full-text",
-                    "text": response_text,
-                    "client_id": client_uid
+                    "type": "emotion_update",
+                    "source": "assistant",
+                    "emotion": assistant_emotion.emotion,
+                    "confidence": assistant_emotion.confidence,
+                    "intensity": assistant_emotion.intensity,
+                    "details": assistant_emotion.details,
+                    "live2d_command": live2d_command
                 })
             )
 
             # Clear the audio buffer
             self.received_data_buffers[client_uid] = []
+        
         except Exception as e:
             logger.error(f"Error processing microphone audio: {e}")
             import traceback
@@ -395,10 +710,10 @@ class WebSocketHandler:
             await websocket.send_text(
                 json.dumps({
                     "type": "error",
-                    "message": "Error processing microphone audio"
+                    "message": "处理您的语音时遇到问题，请稍后再试"
                 })
             )
-            # Clear the audio buffer even if there was an error
+            # Clear the audio buffer on error
             self.received_data_buffers[client_uid] = []
     
     async def handle_status_request(self, websocket: WebSocket, client_uid: str):

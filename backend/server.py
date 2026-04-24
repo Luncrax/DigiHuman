@@ -95,7 +95,7 @@ class DigiHumanWebSocketServer:
                     pass
         
         # Register WebSocket route
-        self.app.add_websocket_route("/ws", websocket_endpoint)
+        self.app.add_api_websocket_route("/ws", websocket_endpoint)
 
         # Add health check endpoint SECOND (before any static files)
         @self.app.get("/health")

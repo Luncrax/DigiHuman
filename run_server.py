@@ -25,7 +25,7 @@ def main():
         "backend.main:app",  # Use the app from backend/main.py
         host=config.HOST,    # Use configured host
         port=config.PORT,    # Use configured port
-        reload=True,         # Enable auto-reload for development
+        reload=False,        # Disable auto-reload for development
         log_level="info"     # Set log level
     )
 

@@ -70,8 +70,11 @@ class LangChainLLMService:
             # Use LangChain to generate response
             reply = await self.llm.ainvoke(messages)
             
-            logger.info(f"Generated reply: {reply.content}")
-            return reply.content
+            # Filter the response to remove any internal thought processes
+            filtered_reply = self._filter_response(reply.content)
+            
+            logger.info(f"Generated reply: {filtered_reply}")
+            return filtered_reply
         except Exception as e:
             logger.error(f"Error generating reply: {e}")
             # Fallback response in case of error
@@ -102,12 +105,43 @@ class LangChainLLMService:
             # Use LangChain to generate response
             reply = await self.llm.ainvoke(messages)
             
-            logger.info(f"Generated contextual reply: {reply.content}")
-            return reply.content
+            # Filter the response to remove any internal thought processes
+            filtered_reply = self._filter_response(reply.content)
+            
+            logger.info(f"Generated contextual reply: {filtered_reply}")
+            return filtered_reply
         except Exception as e:
             logger.error(f"Error generating contextual reply: {e}")
             # Fallback response in case of error
             return "抱歉，我在处理您的消息时遇到了问题。请稍后再试。"
+    
+    def _filter_response(self, response: str) -> str:
+        """
+        Filter the response to remove any internal thought processes or unwanted content
+        
+        Args:
+            response (str): Raw response from the LLM
+            
+        Returns:
+            str: Filtered response
+        """
+        # Remove any internal thought processes marked with special delimiters
+        # Common patterns include: [思考], (思考), {{思考}}, etc.
+        import re
+        
+        # Remove content within brackets that indicate internal thoughts
+        filtered = re.sub(r'\[.*?思考.*?\]', '', response)
+        filtered = re.sub(r'\(.*?思考.*?\)', '', response)
+        filtered = re.sub(r'\{\{.*?思考.*?\}\}', '', response)
+        
+        # Remove any leading/trailing whitespace
+        filtered = filtered.strip()
+        
+        # If the response is empty after filtering, return a default message
+        if not filtered:
+            return "我理解您的意思。"
+        
+        return filtered
     
     def get_model_info(self) -> Dict[str, Any]:
         """

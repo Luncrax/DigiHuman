@@ -1,0 +1,58 @@
+# Python_pycache__/.py[cod]$py.class
+
+# Environment.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnpm-lock.yaml
+package-lock.json
+
+# Buildist/
+build/
+
+# Testing
+coverage/
+.coverage
+.coverage.*
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Models
+models/
+open-llm-vtuber/
+vosk-model-small-cn-0.22.zip
+
+# Audio files
+*.wav
+*.mp3
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Git
+.git/
+
+# Executables
+*.exe
+
+# Test files
+test_*.py
+
+# Report files
+*.md
