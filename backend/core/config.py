@@ -86,6 +86,19 @@ class Config(BaseSettings):
     TTS_SERVICE: str = "openai_tts"  # Options: openai_tts, elevenlabs, etc.
     TTS_VOICE: str = "alloy"
     TTS_MODEL: str = "tts-1"
+    QWEN3_TTS_SERVER_URL: str = "http://127.0.0.1:8010"
+    QWEN3_TTS_SOURCE_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main"
+    QWEN3_TTS_BASE_MODEL_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main/model/base/qwen/Base"
+    QWEN3_TTS_CUSTOM_MODEL_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main/model/custom/qwen/CustomVoice"
+    QWEN3_TTS_DESIGN_MODEL_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main/model/design/qwen/VoiceDesign"
+    QWEN3_TTS_PROMPT_PATH: str = ""
+    QWEN3_TTS_LANGUAGE: str = "Auto"
+    QWEN3_TTS_CUSTOM_SPEAKER: str = "Vivian"
+    QWEN3_TTS_DEVICE: str = "cuda:0"
+    QWEN3_TTS_DTYPE: str = "bfloat16"
+    QWEN3_TTS_FLASH_ATTN: bool = True
+    QWEN3_TTS_WSL_DISTRO: str = "ubuntu"
+    QWEN3_TTS_WSL_VENV: str = "flash_env"
     
     # Live2D settings
     LIVE2D_ENABLED: bool = False

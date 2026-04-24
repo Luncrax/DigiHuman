@@ -1,73 +1,81 @@
 #!/usr/bin/env python3
 """
-DigiHuman 服务启动脚本
-一次性启动前端和后端服务
+Start DigiHuman frontend, backend, and the custom Qwen3-TTS WSL service.
 """
 import os
 import subprocess
-import time
 import sys
+import time
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+FRONTEND_DIR = ROOT / "frontend"
+
 
 def print_banner():
-    """打印启动横幅"""
-    print("=" * 40)
-    print("DigiHuman 服务启动脚本")
-    print("=" * 40)
+    print("=" * 48)
+    print("DigiHuman Unified Startup")
+    print("=" * 48)
+
+
+def _start_windows_cmd(title: str, command: str, cwd: Path):
+    subprocess.Popen(
+        ["cmd.exe", "/c", "start", title, "cmd.exe", "/k", command],
+        cwd=str(cwd),
+    )
+
+
+def start_qwen3_tts_wsl():
+    print("\nStarting Qwen3-TTS WSL service...")
+    distro = os.environ.get("QWEN3_TTS_WSL_DISTRO", "ubuntu")
+    venv_name = os.environ.get("QWEN3_TTS_WSL_VENV", "flash_env")
+    port = os.environ.get("QWEN3_TTS_WSL_PORT", "8010")
+    repo_wsl_path = "/mnt/e/big_work/DigiHuman"
+    qwen_source_wsl_path = "/mnt/e/big_work/Qwen3-TTS-main"
+
+    wsl_command = (
+        f"wsl -d {distro} bash -lc "
+        f"\"cd {qwen_source_wsl_path} && "
+        f"source {venv_name}/bin/activate && "
+        f"python {repo_wsl_path}/backend/tts/qwen3_tts_wsl_server.py --host 0.0.0.0 --port {port}\""
+    )
+    _start_windows_cmd("Qwen3-TTS WSL", wsl_command, ROOT)
+
 
 def start_backend():
-    """启动后端服务"""
-    print("\n启动后端服务...")
-    # 启动后端服务，创建新的命令窗口
-    if sys.platform == 'win32':
-        # Windows系统
-        subprocess.Popen([
-            'cmd.exe', '/c', 'start', 'cmd.exe', '/k', 
-            'python run_server.py'
-        ], cwd=os.path.dirname(os.path.abspath(__file__)))
-    else:
-        # Linux/Mac系统
-        subprocess.Popen([
-            'gnome-terminal', '--', 'python', 'run_server.py'
-        ], cwd=os.path.dirname(os.path.abspath(__file__)))
+    print("\nStarting backend service...")
+    _start_windows_cmd("DigiHuman Backend", "python run_server.py", ROOT)
+
 
 def start_frontend():
-    """启动前端服务"""
-    print("\n启动前端服务...")
-    frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
-    if sys.platform == 'win32':
-        # Windows系统
-        subprocess.Popen([
-            'cmd.exe', '/c', 'start', 'cmd.exe', '/k', 
-            'npm run dev'
-        ], cwd=frontend_dir)
-    else:
-        # Linux/Mac系统
-        subprocess.Popen([
-            'gnome-terminal', '--', 'npm', 'run', 'dev'
-        ], cwd=frontend_dir)
+    print("\nStarting frontend service...")
+    _start_windows_cmd("DigiHuman Frontend", "cmd /c npm run dev", FRONTEND_DIR)
+
 
 def main():
-    """主函数"""
     print_banner()
-    
-    # 启动后端服务
+
+    start_qwen3_tts_wsl()
+    time.sleep(3)
+
     start_backend()
-    
-    # 等待后端服务启动
-    print("等待后端服务启动...")
+    print("Waiting for backend startup...")
     time.sleep(5)
-    
-    # 启动前端服务
+
     start_frontend()
-    
-    print("\n" + "=" * 40)
-    print("服务启动完成！")
-    print("=" * 40)
-    print("后端服务地址: http://localhost:8001")
-    print("前端服务地址: http://localhost:3000")
-    print("=" * 40)
-    print("按任意键退出...")
-    input()
+
+    print("\n" + "=" * 48)
+    print("Startup commands launched")
+    print("=" * 48)
+    print("Qwen3-TTS service: http://127.0.0.1:8010")
+    print("Backend service:   http://localhost:8001")
+    print("Frontend service:  http://localhost:3000")
+    print("=" * 48)
+
+    if sys.stdin.isatty():
+        input("Press Enter to exit this launcher...")
+
 
 if __name__ == "__main__":
     main()

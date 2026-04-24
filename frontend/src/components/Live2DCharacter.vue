@@ -1,230 +1,219 @@
 <template>
-  <div class="live2d-wrapper" :class="{ 'hidden': !showCharacter }">
-    <div id="live2d-canvas" class="live2d-canvas"></div>
-    
-    <!-- 情感状态显示 -->
+  <div class="live2d-wrapper" :class="{ hidden: !showCharacter }">
+    <div ref="canvasRef" class="live2d-canvas"></div>
+
     <div v-if="currentEmotion" class="emotion-indicator" :class="currentEmotion">
       <span class="emotion-icon">{{ getEmotionIcon(currentEmotion) }}</span>
       <span class="emotion-text">{{ getEmotionText(currentEmotion) }}</span>
     </div>
-    
+
     <div class="live2d-controls">
-      <el-button circle size="small" @click="toggleCharacter" class="control-btn" title="显示/隐藏">
+      <el-button circle size="small" class="control-btn" title="显示/隐藏" @click="toggleCharacter">
         <el-icon>
           <View v-if="showCharacter" />
           <Hide v-else />
         </el-icon>
       </el-button>
-      <el-button circle size="small" @click="playMotion('mtn_01')" class="control-btn" title="动作1">
-        <el-icon>
-          <VideoPlay />
-        </el-icon>
+      <el-button circle size="small" class="control-btn" title="动作演示" @click="playMotion('mtn_01')">
+        <el-icon><VideoPlay /></el-icon>
       </el-button>
-      <el-button circle size="small" @click="speak" class="control-btn" title="说话">
-        <el-icon>
-          <Microphone />
-        </el-icon>
+      <el-button circle size="small" class="control-btn" title="说话演示" @click="speak">
+        <el-icon><Microphone /></el-icon>
       </el-button>
-      <el-button circle size="small" @click="resetToNeutral" class="control-btn" title="重置">
-        <el-icon>
-          <Refresh />
-        </el-icon>
+      <el-button circle size="small" class="control-btn" title="重置" @click="resetToNeutral">
+        <el-icon><Refresh /></el-icon>
       </el-button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { View, Hide, Microphone, VideoPlay, Refresh } from '@element-plus/icons-vue'
-
-const props = defineProps({
-  webSocket: {
-    type: Object,
-    default: null
-  }
-})
+import { createPixiLive2d } from '@/lib/live2d/pixiLive2d'
 
 const showCharacter = ref(true)
 const currentEmotion = ref('neutral')
-let live2dInstance = null
+const canvasRef = ref(null)
 
-// 情感图标映射
+let live2dRuntime = null
+
+const emotionAliases = {
+  happy: 'joy',
+  sad: 'sadness',
+  angry: 'anger',
+  surprised: 'surprise',
+  scared: 'fear',
+  shy: 'shy',
+}
+
 const emotionIcons = {
   joy: '😊',
   sadness: '😢',
   anger: '😠',
-  surprise: '😲',
-  fear: '😨',
-  disgust: '🤢',
-  neutral: '😐'
+  surprise: '😮',
+  fear: '😰',
+  disgust: '😒',
+  shy: '☺️',
+  neutral: '😌',
 }
 
-// 情感文本映射
 const emotionTexts = {
   joy: '开心',
-  sadness: '悲伤',
+  sadness: '难过',
   anger: '生气',
   surprise: '惊讶',
-  fear: '害怕',
-  disgust: '厌恶',
-  neutral: '平静'
+  fear: '紧张',
+  disgust: '嫌弃',
+  shy: '害羞',
+  neutral: '平静',
 }
 
-const getEmotionIcon = (emotion) => emotionIcons[emotion] || '😐'
-const getEmotionText = (emotion) => emotionTexts[emotion] || '平静'
+const normalizeEmotion = (emotion) => {
+  if (!emotion) {
+    return 'neutral'
+  }
 
-const toggleCharacter = () => {
-  showCharacter.value = !showCharacter.value
+  return emotionAliases[emotion] || emotion
 }
 
-const playMotion = (motionName) => {
-  console.log('Playing motion:', motionName)
-  if (live2dInstance && live2dInstance.playMotion) {
-    live2dInstance.playMotion(motionName)
+const getEmotionIcon = (emotion) => emotionIcons[normalizeEmotion(emotion)] || emotionIcons.neutral
+const getEmotionText = (emotion) => emotionTexts[normalizeEmotion(emotion)] || emotionTexts.neutral
+
+const initLive2D = async () => {
+  if (!canvasRef.value || live2dRuntime) {
+    return
+  }
+
+  try {
+    live2dRuntime = await createPixiLive2d(canvasRef.value, {
+      modelPath: '/live2d_models/Mao/Mao.model3.json',
+      scaleMultiplier: 0.2,
+    })
+
+    window.live2dApp = {
+      handleCommand: handleEmotionCommand,
+      playMotion,
+      setExpression,
+      resetToNeutral,
+    }
+  } catch (error) {
+    console.error('Pixi Live2D initialization failed:', error)
   }
 }
 
-const setExpression = (expressionName) => {
-  console.log('Setting expression:', expressionName)
-  if (live2dInstance && live2dInstance.setExpression) {
-    live2dInstance.setExpression(expressionName)
+const destroyLive2D = () => {
+  live2dRuntime?.destroy()
+  live2dRuntime = null
+
+  if (window.live2dApp?.handleCommand === handleEmotionCommand) {
+    delete window.live2dApp
+  }
+}
+
+const toggleCharacter = async () => {
+  showCharacter.value = !showCharacter.value
+
+  if (showCharacter.value) {
+    await nextTick()
+    await initLive2D()
+    live2dRuntime?.resize()
+  }
+}
+
+const playMotion = async (motionName) => {
+  if (!live2dRuntime) {
+    return false
+  }
+
+  try {
+    await live2dRuntime.playMotion(motionName)
+    return true
+  } catch (error) {
+    console.error('Failed to play motion:', error)
+    return false
+  }
+}
+
+const setExpression = async (expressionName) => {
+  if (!live2dRuntime) {
+    return false
+  }
+
+  try {
+    await live2dRuntime.setExpression(expressionName)
+    return true
+  } catch (error) {
+    console.error('Failed to set expression:', error)
+    return false
   }
 }
 
 const speak = () => {
-  console.log('Character speaking...')
-  if (live2dInstance && live2dInstance.startSpeak) {
-    live2dInstance.startSpeak()
-    setTimeout(() => {
-      if (live2dInstance && live2dInstance.endSpeak) {
-        live2dInstance.endSpeak()
-      }
-    }, 2000)
+  if (!live2dRuntime) {
+    return
   }
+
+  live2dRuntime.updateParameters({ mouth_open: 0.8 })
+  window.setTimeout(() => {
+    live2dRuntime?.updateParameters({ mouth_open: 0.0 })
+  }, 1200)
 }
 
-const resetToNeutral = () => {
-  console.log('Resetting to neutral state')
+const resetToNeutral = async () => {
   currentEmotion.value = 'neutral'
-  setExpression('exp_01')
-  playMotion('mtn_01')
+  await setExpression('exp_01')
+  await playMotion('idle')
+  live2dRuntime?.updateParameters({
+    angle_x: 0,
+    angle_y: 0,
+    angle_z: 0,
+    mouth_open: 0,
+    breath: 0.4,
+  })
 }
 
-// 处理情感控制指令
-const handleEmotionCommand = (command) => {
-  console.log('Received emotion command:', command)
-  
-  if (!command) return
-  
-  // 更新当前情感
+const handleEmotionCommand = async (command) => {
+  if (!command) {
+    return
+  }
+
   if (command.emotion) {
-    currentEmotion.value = command.emotion
+    currentEmotion.value = normalizeEmotion(command.emotion)
   }
-  
-  // 设置表情
+
   if (command.expression) {
-    setExpression(command.expression)
+    await setExpression(command.expression)
   }
-  
-  // 播放动作
+
   if (command.motion) {
-    playMotion(command.motion)
+    await playMotion(command.motion)
   }
-  
-  // 更新参数（如果支持）
-  if (command.parameters && live2dInstance && live2dInstance.updateParameters) {
-    live2dInstance.updateParameters(command.parameters)
+
+  if (command.parameters) {
+    live2dRuntime?.updateParameters(command.parameters)
   }
 }
 
-// WebSocket消息处理
-const handleWebSocketMessage = (event) => {
-  try {
-    const data = JSON.parse(event.data)
-    
-    // 处理情感更新消息
-    if (data.type === 'emotion_update') {
-      console.log('Emotion update received:', data)
-      
-      // 如果是助手情感更新，处理Live2D指令
-      if (data.source === 'assistant' && data.live2d_command) {
-        handleEmotionCommand(data.live2d_command)
-      }
-    }
-    
-    // 处理聊天响应中的Live2D指令
-    if ((data.type === 'chat_response' || data.type === 'full-text') && data.live2d_command) {
-      console.log('Live2D command in response:', data.live2d_command)
-      handleEmotionCommand(data.live2d_command)
-    }
-    
-  } catch (error) {
-    console.error('Error parsing WebSocket message:', error)
-  }
+const handleCommandEvent = (event) => {
+  handleEmotionCommand(event.detail)
 }
 
 onMounted(async () => {
-  try {
-    // 导入 live2d-render 库
-    const live2d = await import('live2d-render')
-
-    console.log('Loading Live2D model...')
-
-    // 初始化 Live2D - 按照官方示例配置
-    await live2d.initializeLive2D({
-      // live2d 所在区域的背景颜色
-      BackgroundRGBA: [0.0, 0.0, 0.0, 0.0],
-
-      // live2d 的 model3.json 文件的相对路径
-      ResourcesPath: '/live2d_models/Mao/Mao.model3.json',
-
-      // live2d 的大小
-      CanvasSize: {
-        height: 500,
-        width: 400
-      },
-
-      // live2d 的位置 ('left' | 'right')
-      CanvasPosition: 'left',
-
-      // 展示工具箱（可以控制 live2d 的展出隐藏，使用特定表情）
-      ShowToolBox: true,
-
-      // 是否使用 indexDB 进行缓存优化，这样下一次载入就不会再发起网络请求了
-      LoadFromCache: true
-    })
-
-    live2dInstance = live2d
-    console.log('Live2D loaded successfully')
-    
-    // 注册WebSocket消息监听
-    if (props.webSocket) {
-      props.webSocket.addEventListener('message', handleWebSocketMessage)
-    }
-    
-  } catch (error) {
-    console.error('Live2D initialization failed:', error)
-  }
+  await initLive2D()
+  window.addEventListener('digihuman-live2d-command', handleCommandEvent)
 })
 
 onUnmounted(() => {
-  // 移除WebSocket消息监听
-  if (props.webSocket) {
-    props.webSocket.removeEventListener('message', handleWebSocketMessage)
-  }
-  
-  if (live2dInstance && live2dInstance.dispose) {
-    live2dInstance.dispose()
-  }
+  window.removeEventListener('digihuman-live2d-command', handleCommandEvent)
+  destroyLive2D()
 })
 
-// 暴露方法供父组件调用
 defineExpose({
   handleEmotionCommand,
   playMotion,
   setExpression,
-  resetToNeutral
+  resetToNeutral,
 })
 </script>
 
@@ -274,7 +263,6 @@ defineExpose({
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* 情感指示器 */
 .emotion-indicator {
   position: absolute;
   top: 10px;
@@ -302,7 +290,6 @@ defineExpose({
   color: #333;
 }
 
-/* 不同情感的颜色主题 */
 .emotion-indicator.joy {
   background: linear-gradient(135deg, rgba(255, 223, 128, 0.95), rgba(255, 200, 100, 0.95));
   border-color: rgba(255, 180, 0, 0.3);
@@ -333,6 +320,11 @@ defineExpose({
   border-color: rgba(34, 139, 34, 0.3);
 }
 
+.emotion-indicator.shy {
+  background: linear-gradient(135deg, rgba(255, 227, 196, 0.95), rgba(255, 182, 193, 0.95));
+  border-color: rgba(255, 160, 180, 0.35);
+}
+
 .emotion-indicator.neutral {
   background: linear-gradient(135deg, rgba(220, 220, 220, 0.95), rgba(192, 192, 192, 0.95));
   border-color: rgba(169, 169, 169, 0.3);
@@ -343,9 +335,11 @@ defineExpose({
     transform: scale(0.8);
     opacity: 0;
   }
+
   50% {
     transform: scale(1.05);
   }
+
   100% {
     transform: scale(1);
     opacity: 1;

@@ -52,6 +52,26 @@ class WebSocketHandler:
                 self.live2d_model = Live2DModel(live2d_config)
             except Exception as e:
                 logger.error(f"Failed to initialize Live2D model: {e}")
+
+    async def _synthesize_audio(self, text: str, emotion_result=None) -> Optional[str]:
+        """Synthesize audio and return base64-encoded wav data."""
+        if not self.tts_service:
+            return None
+
+        try:
+            audio_response = await self.tts_service.async_synthesize(
+                text,
+                voice=config.TTS_VOICE,
+                model=config.TTS_MODEL,
+                emotion=getattr(emotion_result, "emotion", None),
+                intensity=getattr(emotion_result, "intensity", None),
+            )
+            import base64
+
+            return base64.b64encode(audio_response).decode("utf-8")
+        except Exception as e:
+            logger.error(f"TTS synthesis error: {e}")
+            return None
     
     async def handle_new_connection(self, websocket: WebSocket):
         """Handle new WebSocket connection"""
@@ -325,18 +345,10 @@ class WebSocketHandler:
                 response_data["live2d_command"] = live2d_command
             
             # If TTS is enabled, synthesize speech
-            if self.tts_service:
-                try:
-                    audio_response = await self.tts_service.async_synthesize(
-                        response,
-                        voice=config.TTS_VOICE,
-                        model=config.TTS_MODEL
-                    )
-                    # Encode audio to base64 for transmission
-                    import base64
-                    response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
-                except Exception as e:
-                    logger.error(f"TTS synthesis error: {e}")
+            audio_b64 = await self._synthesize_audio(response, assistant_emotion)
+            if audio_b64:
+                response_data["audio"] = audio_b64
+                response_data["audio_format"] = "audio/wav"
             
             # Send response back to client
             await websocket.send_text(json.dumps(response_data))
@@ -456,19 +468,10 @@ class WebSocketHandler:
                     response_data["live2d_command"] = live2d_command
 
                 # If TTS is enabled, convert response to audio
-                if self.tts_service:
-                    try:
-                        audio_response = await self.tts_service.async_synthesize(
-                            response_text, 
-                            voice=config.TTS_VOICE, 
-                            model=config.TTS_MODEL
-                        )
-                        
-                        # Encode audio to base64 for transmission
-                        import base64
-                        response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
-                    except Exception as e:
-                        logger.error(f"Error in TTS synthesis: {e}")
+                audio_b64 = await self._synthesize_audio(response_text, assistant_emotion)
+                if audio_b64:
+                    response_data["audio"] = audio_b64
+                    response_data["audio_format"] = "audio/wav"
 
                 # Send response back to client
                 await websocket.send_text(json.dumps(response_data))
@@ -668,20 +671,11 @@ class WebSocketHandler:
                 response_data["live2d_command"] = live2d_command
             
             # If TTS is enabled, synthesize speech
-            if self.tts_service:
-                try:
-                    audio_response = await self.tts_service.async_synthesize(
-                        response_text,
-                        voice=config.TTS_VOICE,
-                        model=config.TTS_MODEL
-                    )
-                    # Encode audio to base64 for transmission
-                    import base64
-                    response_data["audio"] = base64.b64encode(audio_response).decode('utf-8')
-                    logger.info(f"TTS synthesis successful for client {client_uid}")
-                except Exception as e:
-                    logger.error(f"TTS synthesis error: {e}")
-                    # Continue without audio if TTS fails
+            audio_b64 = await self._synthesize_audio(response_text, assistant_emotion)
+            if audio_b64:
+                response_data["audio"] = audio_b64
+                response_data["audio_format"] = "audio/wav"
+                logger.info(f"TTS synthesis successful for client {client_uid}")
 
             # Send response back to client
             await websocket.send_text(json.dumps(response_data))
@@ -844,16 +838,17 @@ class WebSocketHandler:
 
             # Synthesize audio from text
             audio_response = await self.tts_service.async_synthesize(
-                text, 
-                voice=config.TTS_VOICE, 
-                model=config.TTS_MODEL
+                text,
+                voice=config.TTS_VOICE,
+                model=config.TTS_MODEL,
             )
 
             # Send audio response
             await websocket.send_text(
                 json.dumps({
                     "type": "tts_response",
-                    "audio": audio_response.decode('latin1') if isinstance(audio_response, bytes) else audio_response,
+                    "audio": __import__("base64").b64encode(audio_response).decode("utf-8") if isinstance(audio_response, bytes) else audio_response,
+                    "audio_format": "audio/wav",
                     "text": text
                 })
             )

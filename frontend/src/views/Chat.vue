@@ -547,7 +547,8 @@ const handleWebSocketMessage = (data) => {
         // 如果有音频数据，播放TTS音频
         if (data.audio) {
           isPlayingAudio.value = true
-          playBase64Audio(data.audio, 'audio/mpeg').catch(err => {
+          const audioFormat = data.audio_format || 'audio/wav'
+          playBase64Audio(data.audio, audioFormat).catch(err => {
             console.error('TTS playback error:', err)
           }).finally(() => {
             isPlayingAudio.value = false
@@ -679,8 +680,16 @@ const handleFullResponse = (data) => {
   }
   
   // 触发Live2D动画
-  if (data.live2d_command && window.live2dApp) {
-    window.live2dApp.handleCommand(data.live2d_command)
+  if (data.live2d_command) {
+    window.dispatchEvent(
+      new CustomEvent('digihuman-live2d-command', {
+        detail: data.live2d_command
+      })
+    )
+
+    if (window.live2dApp?.handleCommand) {
+      window.live2dApp.handleCommand(data.live2d_command)
+    }
   }
 }
 

@@ -11,11 +11,11 @@ class TTSInterface(ABC):
     """Abstract interface for TTS systems"""
     
     @abstractmethod
-    async def async_synthesize(self, text: str) -> Union[bytes, np.ndarray]:
+    async def async_synthesize(self, text: str, **kwargs) -> Union[bytes, np.ndarray]:
         """Asynchronously synthesize text to audio"""
         pass
     
     @abstractmethod
-    def synthesize(self, text: str) -> Union[bytes, np.ndarray]:
+    def synthesize(self, text: str, **kwargs) -> Union[bytes, np.ndarray]:
         """Synchronously synthesize text to audio"""
         pass
