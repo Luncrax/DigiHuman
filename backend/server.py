@@ -4,9 +4,10 @@ Based on open-llm-vtuber's server.py
 """
 import os
 import shutil
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
 from backend.ws_handler import WebSocketHandler
@@ -71,8 +72,9 @@ class DigiHumanWebSocketServer:
             allow_headers=["*"],
         )
 
-        # Add WebSocket route FIRST (before any static files)
-        async def websocket_endpoint(websocket):
+        # Add WebSocket route using decorator (before any static files)
+        @self.app.websocket("/ws")
+        async def websocket_endpoint(websocket: WebSocket):
             try:
                 logger.info("WebSocket connection attempt received")
                 # 检查 Origin 头
@@ -93,9 +95,6 @@ class DigiHumanWebSocketServer:
                     await websocket.close()
                 except:
                     pass
-        
-        # Register WebSocket route
-        self.app.add_api_websocket_route("/ws", websocket_endpoint)
 
         # Add health check endpoint SECOND (before any static files)
         @self.app.get("/health")
@@ -135,12 +134,39 @@ class DigiHumanWebSocketServer:
             name="web_tool",
         )
 
-        # Mount main frontend last (as catch-all)
-        self.app.mount(
-            "/",
-            CORSStaticFiles(directory="frontend/dist", html=True),
-            name="frontend",
-        )
+        # Serve the built frontend through HTTP routes instead of mounting it at "/".
+        # A root StaticFiles mount also intercepts websocket scopes and causes `/ws`
+        # to fail with HTTP 403 before our websocket route can run.
+        self.frontend_dist = Path("frontend/dist").resolve()
+        self.frontend_index = self.frontend_dist / "index.html"
+
+        @self.app.get("/")
+        async def frontend_index():
+            if self.frontend_index.exists():
+                return FileResponse(self.frontend_index)
+            return {
+                "status": "frontend_not_built",
+                "message": "frontend/dist is missing. Run `npm run build` in frontend/ or use the Vite dev server on port 3000.",
+            }
+
+        @self.app.get("/{full_path:path}")
+        async def frontend_assets(full_path: str):
+            if not self.frontend_dist.exists():
+                return Response("Frontend build not found", status_code=404)
+
+            requested = (self.frontend_dist / full_path).resolve()
+            try:
+                requested.relative_to(self.frontend_dist)
+            except ValueError:
+                return Response("Forbidden", status_code=403)
+
+            if requested.is_file():
+                return FileResponse(requested)
+
+            if self.frontend_index.exists():
+                return FileResponse(self.frontend_index)
+
+            return Response("Frontend build not found", status_code=404)
 
     @staticmethod
     def clean_cache():

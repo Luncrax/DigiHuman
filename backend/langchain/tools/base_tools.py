@@ -4,7 +4,7 @@ Provides tool definitions and management using LangChain's tool system
 """
 from typing import Dict, Any, List, Optional
 from langchain_core.tools import tool
-from utils.logger import get_logger
+from backend.utils.logger import get_logger
 
 
 # Initialize logger for this module

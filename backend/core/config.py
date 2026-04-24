@@ -1,53 +1,76 @@
 """
 Configuration module for Virtual Human Assistant
-Contains all configuration settings and environment variables
+Contains all configuration settings and environment variables.
 """
-import os
-from typing import Optional
-from pydantic_settings import BaseSettings
 from dataclasses import dataclass
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _parse_bool(value, default: bool) -> bool:
+    """Parse loose boolean-like environment values safely."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+
+    normalized = str(value).strip().lower()
+    truthy = {"1", "true", "yes", "on", "debug", "development", "dev"}
+    falsy = {"0", "false", "no", "off", "release", "prod", "production"}
+
+    if normalized in truthy:
+        return True
+    if normalized in falsy:
+        return False
+    return default
 
 
 class Config(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
+
     # Application settings
-    APP_NAME: str = os.getenv("APP_NAME", "Virtual Human Assistant")
-    APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
-    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    APP_NAME: str = "Virtual Human Assistant"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
     
     # API settings
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "Virtual Human Assistant API")
-    HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8001"))
+    PROJECT_NAME: str = "Virtual Human Assistant API"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8001
     
     # LLM settings
-    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "glm-4.6v-flash")
-    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
-    LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "512"))
-    LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")  # For AsyncLLM
-    LLM_API_KEY: str = os.getenv("LLM_API_KEY", "c71829a8460f4b51b8d05bb558860179.D2eRQIj3cckGv4BZ")  # For AsyncLLM
-    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "c71829a8460f4b51b8d05bb558860179.D2eRQIj3cckGv4BZ")
-    OPENAI_ORGANIZATION_ID: str = os.getenv("OPENAI_ORGANIZATION_ID", "")
+    LLM_MODEL_NAME: str = "glm-4.6v-flash"
+    LLM_TEMPERATURE: float = 0.7
+    LLM_MAX_TOKENS: int = 512
+    LLM_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4/"
+    LLM_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4/"
+    OPENAI_API_KEY: str = ""
+    OPENAI_ORGANIZATION_ID: str = ""
     
     @property
     def LLM_MODEL(self) -> str:
         return self.LLM_MODEL_NAME
     
     # Memory settings
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-    MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
-    MILVUS_PORT: int = int(os.getenv("MILVUS_PORT", "19530"))
+    REDIS_URL: str = "redis://localhost:6379"
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
     
     # Frontend settings
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    FRONTEND_URL: str = "http://localhost:3000"
     
     # Logging settings
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    LOG_FILE: str = os.getenv("LOG_FILE", "app.log")
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = "app.log"
     
     # CORS settings
-    BACKEND_CORS_ORIGINS: str = os.getenv("BACKEND_CORS_ORIGINS", "*")
+    BACKEND_CORS_ORIGINS: str = "*"
     
     @property
     def backend_cors_origins_list(self) -> list:
@@ -57,27 +80,35 @@ class Config(BaseSettings):
         return ["*"]
     
     # ASR/TTS settings
-    ASR_ENABLED: bool = os.getenv("ASR_ENABLED", "True").lower() == "true"
-    TTS_ENABLED: bool = os.getenv("TTS_ENABLED", "True").lower() == "true"
-    ASR_SERVICE: str = os.getenv("ASR_SERVICE", "openai_whisper")  # Options: openai_whisper, vosk, etc.
-    TTS_SERVICE: str = os.getenv("TTS_SERVICE", "openai_tts")  # Options: openai_tts, elevenlabs, etc.
-    TTS_VOICE: str = os.getenv("TTS_VOICE", "alloy")
-    TTS_MODEL: str = os.getenv("TTS_MODEL", "tts-1")
+    ASR_ENABLED: bool = True
+    TTS_ENABLED: bool = True
+    ASR_SERVICE: str = "openai_whisper"  # Options: openai_whisper, vosk, etc.
+    TTS_SERVICE: str = "openai_tts"  # Options: openai_tts, elevenlabs, etc.
+    TTS_VOICE: str = "alloy"
+    TTS_MODEL: str = "tts-1"
     
     # Live2D settings
-    LIVE2D_ENABLED: bool = os.getenv("LIVE2D_ENABLED", "False").lower() == "true"
-    LIVE2D_MODEL_PATH: str = os.getenv("LIVE2D_MODEL_PATH", "")
-    LIVE2D_MOTION_PATH: str = os.getenv("LIVE2D_MOTION_PATH", "")
-    LIVE2D_EXPRESSION_PATH: str = os.getenv("LIVE2D_EXPRESSION_PATH", "")
-    LIVE2D_PHYSICS_PATH: str = os.getenv("LIVE2D_PHYSICS_PATH", "")
-    LIVE2D_POSE_PATH: str = os.getenv("LIVE2D_POSE_PATH", "")
+    LIVE2D_ENABLED: bool = False
+    LIVE2D_MODEL_PATH: str = ""
+    LIVE2D_MOTION_PATH: str = ""
+    LIVE2D_EXPRESSION_PATH: str = ""
+    LIVE2D_PHYSICS_PATH: str = ""
+    LIVE2D_POSE_PATH: str = ""
     
     # WebSocket settings
-    WS_MAX_CONNECTIONS: int = int(os.getenv("WS_MAX_CONNECTIONS", "100"))
-    WS_TIMEOUT: int = int(os.getenv("WS_TIMEOUT", "300"))  # 5 minutes timeout
+    WS_MAX_CONNECTIONS: int = 100
+    WS_TIMEOUT: int = 300  # 5 minutes timeout
 
-    class Config:
-        env_file = ".env"
+    @field_validator("DEBUG", "ASR_ENABLED", "TTS_ENABLED", "LIVE2D_ENABLED", mode="before")
+    @classmethod
+    def parse_bool_fields(cls, value, info):
+        defaults = {
+            "DEBUG": False,
+            "ASR_ENABLED": True,
+            "TTS_ENABLED": True,
+            "LIVE2D_ENABLED": False,
+        }
+        return _parse_bool(value, defaults[info.field_name])
 
 
 # Create a global config instance

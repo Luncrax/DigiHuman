@@ -7,8 +7,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableSequence
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from utils.logger import get_logger
-from core.config import config
+from backend.utils.logger import get_logger
+from backend.core.config import config
 from ..models.custom_llm import get_custom_llm
 
 

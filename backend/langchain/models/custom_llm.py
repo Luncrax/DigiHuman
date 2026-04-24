@@ -8,8 +8,8 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, System
 from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from openai import AsyncOpenAI
-from core.config import config
-from utils.logger import get_logger
+from backend.core.config import config
+from backend.utils.logger import get_logger
 
 
 logger = get_logger(__name__)

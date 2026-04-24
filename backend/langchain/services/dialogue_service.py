@@ -8,7 +8,7 @@ from ..models.llm_service import get_llm_service
 from ..memory.memory_manager import get_memory_manager, clear_memory_manager
 from ..chains.conversation_chain import ConversationChain
 from ..tools.base_tools import get_tool_manager
-from utils.logger import get_logger
+from backend.utils.logger import get_logger
 
 
 # Initialize logger for this module

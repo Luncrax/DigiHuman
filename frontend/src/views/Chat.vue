@@ -110,6 +110,61 @@
 
       <!-- Chat Area -->
       <div class="flex-1 glass-card p-6">
+        <!-- 情绪状态指示器 -->
+        <div v-if="currentEmotion.assistant.emotion !== 'neutral'" class="emotion-indicator mb-4 p-3 bg-white/10 rounded-lg">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <el-tag 
+                :type="getEmotionInfo(currentEmotion.assistant.emotion).color === '#67C23A' ? 'success' :
+                       getEmotionInfo(currentEmotion.assistant.emotion).color === '#F56C6C' ? 'danger' :
+                       getEmotionInfo(currentEmotion.assistant.emotion).color === '#E6A23C' ? 'warning' : 'info'"
+                effect="dark"
+                class="emotion-tag"
+              >
+                {{ getEmotionInfo(currentEmotion.assistant.emotion).text }}
+              </el-tag>
+              <span class="text-sm text-black/70">
+                置信度: {{ Math.round(currentEmotion.assistant.confidence * 100) }}% | 
+                强度: {{ currentEmotion.assistant.intensity === 'high' ? '高' : 
+                        currentEmotion.assistant.intensity === 'medium' ? '中' : '低' }}
+              </span>
+            </div>
+            <el-tooltip content="基于情绪生成的语音参数" placement="top">
+              <el-button type="text" size="small" @click="showParamsDetail = !showParamsDetail">
+                {{ showParamsDetail ? '收起参数' : '查看参数' }}
+              </el-button>
+            </el-tooltip>
+          </div>
+          
+          <!-- 参数详情面板 -->
+          <div v-if="showParamsDetail && (currentParams.tts || currentParams.live2d)" class="params-detail mt-3 pt-3 border-t border-white/20">
+            <el-row :gutter="20">
+              <el-col :span="12" v-if="currentParams.tts">
+                <div class="param-section">
+                  <h5 class="text-xs font-semibold text-black/60 mb-2">TTS参数</h5>
+                  <div class="text-xs text-black/70 space-y-1">
+                    <div>语速: {{ currentParams.tts.speed?.toFixed(2) }}</div>
+                    <div>音调: {{ currentParams.tts.pitch?.toFixed(2) }}</div>
+                    <div>音量: {{ currentParams.tts.volume?.toFixed(2) }}</div>
+                    <div>风格: {{ currentParams.tts.voice_style }}</div>
+                  </div>
+                </div>
+              </el-col>
+              <el-col :span="12" v-if="currentParams.live2d">
+                <div class="param-section">
+                  <h5 class="text-xs font-semibold text-black/60 mb-2">Live2D参数</h5>
+                  <div class="text-xs text-black/70 space-y-1">
+                    <div>表情: {{ currentParams.live2d.expression }}</div>
+                    <div>动作: {{ currentParams.live2d.motion }}</div>
+                    <div>嘴型: {{ currentParams.live2d.mouth_open?.toFixed(2) }}</div>
+                    <div>呼吸: {{ currentParams.live2d.breath?.toFixed(2) }}</div>
+                  </div>
+                </div>
+              </el-col>
+            </el-row>
+          </div>
+        </div>
+
         <div class="h-96 overflow-y-auto mb-4 space-y-4" id="chatContainer">
           <div 
             v-for="(msg, index) in messages" 
@@ -407,11 +462,10 @@ const filteredHistories = computed(() => {
 // 连接WebSocket
 const connectWebSocket = () => {
   try {
-    // 连接到后端WebSocket服务
+    // 使用 Vite 代理连接到后端 WebSocket 服务
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // 使用固定的后端端口8001
-    const wsHost = window.location.hostname + ':8001'
-    ws = new WebSocket(`${wsProtocol}//${wsHost}/ws`)
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`
+    ws = new WebSocket(wsUrl)
     
     ws.onopen = () => {
       console.log('WebSocket connected')
@@ -444,6 +498,21 @@ const connectWebSocket = () => {
   }
 }
 
+// 当前情绪状态
+const currentEmotion = ref({
+  user: { emotion: 'neutral', confidence: 0.5, intensity: 'low' },
+  assistant: { emotion: 'neutral', confidence: 0.5, intensity: 'low' }
+})
+
+// 当前TTS和Live2D参数（用于调试展示）
+const currentParams = ref({
+  tts: null,
+  live2d: null
+})
+
+// 是否显示参数详情
+const showParamsDetail = ref(false)
+
 // 处理WebSocket消息
 const handleWebSocketMessage = (data) => {
   switch (data.type) {
@@ -462,6 +531,7 @@ const handleWebSocketMessage = (data) => {
       
     case 'chat_response':
     case 'full-text':
+      // 兼容旧格式
       const content = data.message || data.text
       if (content) {
         // 检查是否有语音识别的文本
@@ -482,6 +552,35 @@ const handleWebSocketMessage = (data) => {
           }).finally(() => {
             isPlayingAudio.value = false
           })
+        }
+      }
+      break
+      
+    case 'full-response':
+      // 新的完整响应格式，包含情绪和参数
+      handleFullResponse(data)
+      break
+      
+    case 'emotion_update':
+      // 情绪更新事件
+      if (data.source === 'user') {
+        currentEmotion.value.user = {
+          emotion: data.emotion,
+          confidence: data.confidence,
+          intensity: data.intensity
+        }
+      } else if (data.source === 'assistant') {
+        currentEmotion.value.assistant = {
+          emotion: data.emotion,
+          confidence: data.confidence,
+          intensity: data.intensity
+        }
+        // 更新参数显示
+        if (data.tts_params) {
+          currentParams.value.tts = data.tts_params
+        }
+        if (data.live2d_params) {
+          currentParams.value.live2d = data.live2d_params
         }
       }
       break
@@ -531,6 +630,74 @@ const handleWebSocketMessage = (data) => {
       fetchHistoryList()
       break
   }
+}
+
+// 处理完整响应（包含情绪和参数）
+const handleFullResponse = (data) => {
+  console.log('Received full response:', data)
+  
+  // 更新情绪状态
+  if (data.emotion) {
+    currentEmotion.value = data.emotion
+  }
+  
+  // 更新参数显示
+  if (data.tts_params) {
+    currentParams.value.tts = data.tts_params
+  }
+  if (data.live2d_params) {
+    currentParams.value.live2d = data.live2d_params
+  }
+  
+  // 处理文本内容
+  const content = data.text?.enhanced || data.text?.original || data.text
+  if (content) {
+    // 添加助手的响应
+    const message = { 
+      role: 'assistant', 
+      content,
+      emotion: data.emotion?.assistant,
+      params: {
+        tts: data.tts_params,
+        live2d: data.live2d_params
+      }
+    }
+    messages.value.push(message)
+    saveSession()
+    scrollToBottom()
+    
+    // 播放TTS音频
+    if (data.audio) {
+      isPlayingAudio.value = true
+      const audioFormat = data.audio_format || 'audio/wav'
+      playBase64Audio(data.audio, audioFormat).catch(err => {
+        console.error('TTS playback error:', err)
+      }).finally(() => {
+        isPlayingAudio.value = false
+      })
+    }
+  }
+  
+  // 触发Live2D动画
+  if (data.live2d_command && window.live2dApp) {
+    window.live2dApp.handleCommand(data.live2d_command)
+  }
+}
+
+// 情绪标签映射
+const emotionLabels = {
+  joy: { text: '开心', color: '#67C23A', icon: 'Happy' },
+  sadness: { text: '悲伤', color: '#909399', icon: 'Sad' },
+  anger: { text: '生气', color: '#F56C6C', icon: 'Angry' },
+  surprise: { text: '惊讶', color: '#E6A23C', icon: 'Surprised' },
+  fear: { text: '害怕', color: '#8E44AD', icon: 'Scared' },
+  disgust: { text: '厌恶', color: '#795548', icon: 'Disgusted' },
+  neutral: { text: '平静', color: '#409EFF', icon: 'Neutral' }
+}
+
+// 获取情绪显示信息
+const getEmotionInfo = (emotion) => {
+  return emotionLabels[emotion] || emotionLabels.neutral
 }
 
 // 获取历史列表

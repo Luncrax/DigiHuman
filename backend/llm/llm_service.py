@@ -7,8 +7,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from utils.logger import get_logger
-from core.config import config
+from backend.utils.logger import get_logger
+from backend.core.config import config
 
 
 # Initialize logger for this module
