@@ -1,944 +1,708 @@
 <template>
-  <div class="container mx-auto px-4 py-5 pt-20">
-    <div class="text-center mb-8">
-      <h1 class="text-4xl font-bold mb-3 text-black drop-shadow-lg">💬 智能对话</h1>
-      <p class="text-lg text-black/90 drop-shadow">与虚拟助手进行自然语言交流</p>
-      <p v-if="!connected" class="text-sm text-red-400">正在连接服务器...</p>
-      <p v-else class="text-sm text-green-400">已连接到服务器</p>
-    </div>
+  <div class="grid gap-6 xl:grid-cols-[300px_1fr]">
+    <aside class="panel rounded-[32px] p-5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="feature-kicker">Session</div>
+          <h2 class="mt-2 text-xl font-extrabold tracking-[-0.03em] text-[var(--text)]">对话历史</h2>
+        </div>
+        <button class="action-btn secondary" type="button" :disabled="!connected" @click="createNewHistory">
+          新建
+        </button>
+      </div>
 
-    <div class="max-w-6xl mx-auto flex gap-6">
-      <!-- History Sidebar -->
-      <div class="w-72 flex-shrink-0">
-        <div class="glass-card p-4 mb-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-black font-semibold">对话历史</h3>
-            <el-button 
-              type="primary" 
-              size="small" 
-              @click="createNewHistory"
-              :disabled="!connected"
+      <div class="mt-5">
+        <input
+          v-model="searchKeyword"
+          type="text"
+          placeholder="搜索历史记录"
+          class="w-full rounded-2xl border border-[var(--line)] bg-white/25 px-4 py-3 text-sm text-[var(--text)] outline-none"
+        />
+      </div>
+
+      <div class="mt-5 space-y-3">
+        <button
+          v-for="history in filteredHistories"
+          :key="history.uid"
+          type="button"
+          class="feature-card panel-outline block w-full text-left"
+          :class="{ 'ring-2 ring-[var(--accent)]': currentHistoryUid === history.uid }"
+          @click="switchHistory(history.uid)"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-bold text-[var(--text)]">{{ getHistoryTitle(history) }}</div>
+              <div class="mt-2 truncate text-xs text-[var(--muted)]">{{ getHistoryPreview(history) }}</div>
+              <div class="mt-3 text-[11px] text-[var(--muted)]">{{ formatTime(history.timestamp) }}</div>
+            </div>
+            <button
+              class="text-xs font-semibold text-[var(--danger)]"
+              type="button"
+              @click.stop="deleteHistory(history.uid)"
             >
-              + 新建
-            </el-button>
+              删除
+            </button>
           </div>
-          
-          <!-- 搜索框 -->
-          <el-input
-            v-model="searchKeyword"
-            placeholder="搜索历史记录..."
-            prefix-icon="Search"
-            size="small"
-            class="mb-3"
-            clearable
-            @input="filterHistories"
-          />
-          
-          <!-- 筛选选项 -->
-          <div class="mb-3">
-            <el-select
-              v-model="filterType"
-              placeholder="筛选方式"
-              size="small"
-              class="w-full"
-              @change="filterHistories"
-            >
-              <el-option label="全部" value="all" />
-              <el-option label="今天" value="today" />
-              <el-option label="本周" value="week" />
-              <el-option label="本月" value="month" />
-            </el-select>
+        </button>
+
+        <div v-if="!filteredHistories.length" class="rounded-[24px] border border-dashed border-[var(--line)] px-4 py-8 text-center text-sm text-[var(--muted)]">
+          暂无可显示的对话历史
+        </div>
+      </div>
+    </aside>
+
+    <section class="panel-strong rounded-[32px] p-5 md:p-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div class="feature-kicker">Chat + Voice Sync</div>
+          <h1 class="mt-2 text-3xl font-extrabold tracking-[-0.04em] text-[var(--text)]">对话控制台</h1>
+          <p class="mt-3 max-w-3xl text-sm leading-6 text-[var(--muted)]">
+            发送消息后会先显示文本，再在音频准备好后自动开口说话。文字打字、语音播放和 Live2D 状态机会尽量并行，不再等整轮都完成才一起出现。
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="status-chip">
+            <span class="status-dot" :class="connected ? 'healthy' : 'error'"></span>
+            <span>{{ connected ? '已连接' : '连接中' }}</span>
           </div>
-          
-          <!-- 历史记录列表 -->
-          <div class="space-y-2 max-h-96 overflow-y-auto">
+          <div class="status-chip">
+            <span class="status-dot" :class="isPlayingAudio ? 'healthy' : 'warning'"></span>
+            <span>{{ isPlayingAudio ? '语音播放中' : '等待播放' }}</span>
+          </div>
+          <div class="status-chip">
+            <span class="status-dot" :class="currentEmotion.assistant.emotion || 'neutral'"></span>
+            <span>{{ emotionLabel(currentEmotion.assistant.emotion) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="systemNotice" class="mt-5 rounded-[22px] border border-[rgba(201,122,24,0.22)] bg-[rgba(201,122,24,0.08)] px-4 py-3 text-sm text-[var(--warning)]">
+        {{ systemNotice }}
+      </div>
+
+      <div v-if="runtimeWarnings.length" class="mt-4 space-y-2">
+        <div
+          v-for="warning in runtimeWarnings"
+          :key="warning.code"
+          class="rounded-[20px] border border-[rgba(201,122,24,0.22)] bg-[rgba(201,122,24,0.08)] px-4 py-3 text-sm text-[var(--warning)]"
+        >
+          {{ warning.message }}
+        </div>
+      </div>
+
+      <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_280px]">
+        <div class="panel rounded-[28px] p-4 md:p-5">
+          <div id="chatContainer" class="flex h-[560px] flex-col gap-4 overflow-y-auto pr-2">
             <div
-              v-for="history in filteredHistories"
-              :key="history.uid"
-              class="history-item-container"
+              v-for="msg in messages"
+              :key="msg.id"
+              :class="[
+                'max-w-[82%] rounded-[24px] px-4 py-3 text-sm leading-7',
+                msg.role === 'user'
+                  ? 'ml-auto bg-[var(--accent)] text-[#fff8f0]'
+                  : 'bg-white/50 text-[var(--text)]',
+              ]"
             >
-              <div
-                @click="switchHistory(history.uid)"
-                :class="['history-item p-3 rounded cursor-pointer transition-colors', 
-                  currentHistoryUid === history.uid ? 'bg-blue-500/50' : 'hover:bg-white/10']"
-              >
-                <div class="flex items-start justify-between">
-                  <div class="flex-1 min-w-0">
-                    <div class="text-black text-sm font-medium truncate">
-                      {{ getHistoryTitle(history) }}
-                    </div>
-                    <div class="text-black/70 text-xs mt-1 truncate">
-                      {{ getHistoryPreview(history) }}
-                    </div>
-                    <div class="text-black/50 text-xs mt-2">
-                      {{ formatTime(history.timestamp) }}
-                    </div>
-                  </div>
-                  <el-dropdown @command="(cmd) => handleHistoryAction(cmd, history.uid)" trigger="click">
-                    <el-button
-                      type="text"
-                      :icon="MoreFilled"
-                      size="small"
-                      class="text-black/60 hover:text-black"
-                    />
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="preview">
-                          <el-icon><View /></el-icon>
-                          预览
-                        </el-dropdown-item>
-                        <el-dropdown-item command="rename">
-                          <el-icon><Edit /></el-icon>
-                          重命名
-                        </el-dropdown-item>
-                        <el-dropdown-item command="delete" divided>
-                          <el-icon><Delete /></el-icon>
-                          删除
-                        </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                </div>
+              <div class="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] opacity-70">
+                <span>{{ msg.role === 'user' ? 'User' : 'Assistant' }}</span>
+                <span v-if="msg.role === 'assistant' && msg.emotion" class="rounded-full bg-black/8 px-2 py-0.5 normal-case tracking-normal">
+                  {{ emotionLabel(msg.emotion) }}
+                </span>
+                <span v-if="msg.status === 'thinking'">思考中</span>
+                <span v-else-if="msg.status === 'typing'">输出中</span>
+                <span v-else-if="msg.status === 'speaking'">说话中</span>
+              </div>
+              <p class="whitespace-pre-wrap break-words">{{ msg.content || (msg.role === 'assistant' ? '...' : '') }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="panel rounded-[28px] p-4">
+            <div class="feature-kicker">Emotion</div>
+            <div class="mt-3 text-2xl font-extrabold tracking-[-0.04em] text-[var(--text)]">
+              {{ emotionLabel(currentEmotion.assistant.emotion) }}
+            </div>
+            <div class="mt-3 text-sm text-[var(--muted)]">
+              置信度 {{ Math.round((currentEmotion.assistant.confidence || 0) * 100) }}%
+            </div>
+            <div class="mt-1 text-sm text-[var(--muted)]">
+              强度 {{ currentEmotion.assistant.intensity || 'medium' }}
+            </div>
+          </div>
+
+          <div class="panel rounded-[28px] p-4">
+            <div class="feature-kicker">TTS / Live2D</div>
+            <div class="mt-4 space-y-3 text-sm text-[var(--muted)]">
+              <div>
+                <div class="font-semibold text-[var(--text)]">语音模式</div>
+                <div>{{ currentParams.tts?.model || '-' }}</div>
+              </div>
+              <div>
+                <div class="font-semibold text-[var(--text)]">指令</div>
+                <div class="line-clamp-3">{{ currentTtsInstruct || '-' }}</div>
+              </div>
+              <div>
+                <div class="font-semibold text-[var(--text)]">Live2D 动作</div>
+                <div>{{ currentParams.live2d?.motion || currentParams.live2d?.react_motion || '-' }}</div>
               </div>
             </div>
-            <div v-if="filteredHistories.length === 0" class="text-black/50 text-sm text-center py-8">
-              {{ historyList.length === 0 ? '暂无历史记录' : '未找到匹配的历史记录' }}
+          </div>
+
+          <div class="panel rounded-[28px] p-4">
+            <div class="feature-kicker">Voice Input</div>
+            <div v-if="isRecording" class="mt-4">
+              <div class="text-sm font-semibold text-[var(--danger)]">录音中...</div>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
+                <div class="h-full bg-[var(--danger)] transition-all duration-100" :style="{ width: `${audioLevel}%` }"></div>
+              </div>
+            </div>
+            <div v-else class="mt-4 text-sm text-[var(--muted)]">
+              点击麦克风后录音，结束时会自动转写并走同一条对话链路。
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Chat Area -->
-      <div class="flex-1 glass-card p-6">
-        <!-- 情绪状态指示器 -->
-        <div v-if="currentEmotion.assistant.emotion !== 'neutral'" class="emotion-indicator mb-4 p-3 bg-white/10 rounded-lg">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <el-tag 
-                :type="getEmotionInfo(currentEmotion.assistant.emotion).color === '#67C23A' ? 'success' :
-                       getEmotionInfo(currentEmotion.assistant.emotion).color === '#F56C6C' ? 'danger' :
-                       getEmotionInfo(currentEmotion.assistant.emotion).color === '#E6A23C' ? 'warning' : 'info'"
-                effect="dark"
-                class="emotion-tag"
-              >
-                {{ getEmotionInfo(currentEmotion.assistant.emotion).text }}
-              </el-tag>
-              <span class="text-sm text-black/70">
-                置信度: {{ Math.round(currentEmotion.assistant.confidence * 100) }}% | 
-                强度: {{ currentEmotion.assistant.intensity === 'high' ? '高' : 
-                        currentEmotion.assistant.intensity === 'medium' ? '中' : '低' }}
-              </span>
-            </div>
-            <el-tooltip content="基于情绪生成的语音参数" placement="top">
-              <el-button type="text" size="small" @click="showParamsDetail = !showParamsDetail">
-                {{ showParamsDetail ? '收起参数' : '查看参数' }}
-              </el-button>
-            </el-tooltip>
-          </div>
-          
-          <!-- 参数详情面板 -->
-          <div v-if="showParamsDetail && (currentParams.tts || currentParams.live2d)" class="params-detail mt-3 pt-3 border-t border-white/20">
-            <el-row :gutter="20">
-              <el-col :span="12" v-if="currentParams.tts">
-                <div class="param-section">
-                  <h5 class="text-xs font-semibold text-black/60 mb-2">TTS参数</h5>
-                  <div class="text-xs text-black/70 space-y-1">
-                    <div>语速: {{ currentParams.tts.speed?.toFixed(2) }}</div>
-                    <div>音调: {{ currentParams.tts.pitch?.toFixed(2) }}</div>
-                    <div>音量: {{ currentParams.tts.volume?.toFixed(2) }}</div>
-                    <div>风格: {{ currentParams.tts.voice_style }}</div>
-                  </div>
-                </div>
-              </el-col>
-              <el-col :span="12" v-if="currentParams.live2d">
-                <div class="param-section">
-                  <h5 class="text-xs font-semibold text-black/60 mb-2">Live2D参数</h5>
-                  <div class="text-xs text-black/70 space-y-1">
-                    <div>表情: {{ currentParams.live2d.expression }}</div>
-                    <div>动作: {{ currentParams.live2d.motion }}</div>
-                    <div>嘴型: {{ currentParams.live2d.mouth_open?.toFixed(2) }}</div>
-                    <div>呼吸: {{ currentParams.live2d.breath?.toFixed(2) }}</div>
-                  </div>
-                </div>
-              </el-col>
-            </el-row>
-          </div>
-        </div>
+      <div class="mt-5 flex flex-col gap-3">
+        <textarea
+          v-model="inputMessage"
+          rows="3"
+          class="w-full rounded-[24px] border border-[var(--line)] bg-white/30 px-4 py-4 text-[var(--text)] outline-none"
+          placeholder="输入你想对数字人说的话"
+          :disabled="!connected"
+          @keydown.enter.exact.prevent="sendMessage"
+        ></textarea>
 
-        <div class="h-96 overflow-y-auto mb-4 space-y-4" id="chatContainer">
-          <div 
-            v-for="(msg, index) in messages" 
-            :key="index"
-            :class="['message', msg.role === 'assistant' ? 'assistant-message' : 'user-message']"
-          >
-            <p>{{ msg.content }}</p>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="text-sm text-[var(--muted)]">
+            {{ currentReplyState }}
           </div>
-        </div>
-
-        <div class="flex gap-3">
-          <el-input
-            v-model="inputMessage"
-            placeholder="输入消息..."
-            @keyup.enter="sendMessage"
-            class="flex-1"
-            :disabled="!connected"
-          />
-          <el-button 
-            type="primary" 
-            @click="sendMessage" 
-            :disabled="!connected"
-          >
-            发送
-          </el-button>
-          <el-button 
-            :type="isRecording ? 'danger' : 'default'" 
-            @click="toggleVoiceRecording"
-            :disabled="!connected"
-            :icon="Microphone"
-            circle
-            :title="isRecording ? '停止录音' : '开始语音输入'"
-          />
-        </div>
-        
-        <!-- 录音状态显示 -->
-        <div v-if="isRecording" class="mt-3 flex items-center gap-2">
-          <div class="recording-indicator flex items-center gap-2 px-3 py-1 bg-red-50 rounded-full">
-            <span class="recording-dot w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-            <span class="text-sm text-red-600">正在录音...</span>
-          </div>
-          <div class="audio-level flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              class="h-full bg-red-500 transition-all duration-100"
-              :style="{ width: audioLevel + '%' }"
-            ></div>
+          <div class="flex flex-wrap gap-3">
+            <button class="action-btn secondary" type="button" :disabled="!connected || playerIsLoading" @click="toggleVoiceRecording">
+              {{ isRecording ? '结束录音' : '语音输入' }}
+            </button>
+            <button class="action-btn primary" type="button" :disabled="!connected || !inputMessage.trim()" @click="sendMessage">
+              发送消息
+            </button>
           </div>
         </div>
       </div>
-    </div>
-    
-    <!-- 历史记录预览对话框 -->
-    <el-dialog
-      v-model="previewDialogVisible"
-      title="历史记录预览"
-      width="600px"
-    >
-      <div v-if="previewHistory" class="max-h-96 overflow-y-auto">
-        <div
-          v-for="(msg, index) in previewHistory.messages"
-          :key="index"
-          :class="['preview-message p-3 mb-2 rounded', 
-            msg.role === 'human' ? 'bg-blue-50' : 'bg-gray-50']"
-        >
-          <div class="text-xs text-gray-500 mb-1">
-            {{ msg.role === 'human' ? '用户' : '助手' }}
-          </div>
-          <div class="text-sm text-gray-800">
-            {{ msg.content }}
-          </div>
-        </div>
-      </div>
-      <div v-else class="text-center py-8 text-gray-500">
-        暂无消息记录
-      </div>
-      <template #footer>
-        <el-button @click="previewDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="loadPreviewHistory">加载此对话</el-button>
-      </template>
-    </el-dialog>
-    
-    <!-- 重命名对话框 -->
-    <el-dialog
-      v-model="renameDialogVisible"
-      title="重命名对话"
-      width="400px"
-    >
-      <el-input
-        v-model="newHistoryName"
-        placeholder="输入新的对话名称"
-        maxlength="50"
-        show-word-limit
-      />
-      <template #footer>
-        <el-button @click="renameDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmRename" :disabled="!newHistoryName.trim()">确定</el-button>
-      </template>
-    </el-dialog>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Search, MoreFilled, View, Edit, Delete, Microphone } from '@element-plus/icons-vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useAudioRecorder } from '@/composables/useAudioRecorder'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useAudioRecorder } from '@/composables/useAudioRecorder'
+
+const defaultAssistantMessage = {
+  id: 'welcome-message',
+  role: 'assistant',
+  content: '你好，我已经准备好了。你发来一句话后，我会先显示文本，再尽快开始说话并驱动 Live2D。',
+  status: 'ready',
+  emotion: 'neutral',
+}
 
 const inputMessage = ref('')
-const messages = ref([
-  { role: 'assistant', content: '你好！我是你的虚拟助手。有什么我可以帮助你的吗？' }
-])
 const connected = ref(false)
+const messages = ref([defaultAssistantMessage])
 const historyList = ref([])
 const currentHistoryUid = ref(null)
 const searchKeyword = ref('')
-const filterType = ref('all')
-const previewDialogVisible = ref(false)
-const renameDialogVisible = ref(false)
-const previewHistory = ref(null)
-const newHistoryName = ref('')
-const selectedHistoryUid = ref(null)
+const runtimeWarnings = ref([])
+const currentTtsInstruct = ref('')
+const currentParams = ref({
+  tts: null,
+  live2d: null,
+})
+const currentEmotion = ref({
+  user: { emotion: 'neutral', confidence: 0.5, intensity: 'medium' },
+  assistant: { emotion: 'neutral', confidence: 0.5, intensity: 'medium' },
+})
 
-// 语音相关状态
+const activeResponseId = ref(null)
+const clientId = ref(localStorage.getItem('digiHuman_clientId') || '')
 const isRecording = ref(false)
-const isPlayingAudio = ref(false)
-let ws = null
-let clientId = localStorage.getItem('digiHuman_clientId') || null
 
-// 语音录制和播放
-const { 
-  isRecording: recorderIsRecording, 
-  audioLevel, 
-  hasPermission: recorderHasPermission,
+let ws = null
+let reconnectTimer = null
+let typingTimer = null
+
+const {
+  audioLevel,
   errorMessage: recorderError,
   requestPermission,
   startRecording,
   stopRecording,
-  cancelRecording
 } = useAudioRecorder()
 
 const {
   isPlaying: playerIsPlaying,
   isLoading: playerIsLoading,
+  errorMessage: playerError,
+  capabilityWarning: playerCapabilityWarning,
+  primeAudio,
   playBase64Audio,
-  stopPlayback
+  stopPlayback,
 } = useAudioPlayer()
 
-// 从localStorage恢复会话数据
-const restoreSession = () => {
-  const savedMessages = localStorage.getItem('digiHuman_messages')
-  const savedHistoryUid = localStorage.getItem('digiHuman_currentHistoryUid')
-  
-  if (savedMessages) {
-    try {
-      const parsed = JSON.parse(savedMessages)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        messages.value = parsed
-      }
-    } catch (e) {
-      console.error('Failed to restore messages:', e)
-    }
+const isPlayingAudio = computed(() => playerIsPlaying.value || playerIsLoading.value)
+
+const filteredHistories = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  if (!keyword) return historyList.value
+  return historyList.value.filter((history) => {
+    const preview = history?.latest_message?.content || ''
+    return preview.toLowerCase().includes(keyword)
+  })
+})
+
+const systemNotice = computed(() => {
+  if (!connected.value) return '正在连接后端服务，连接恢复后即可继续联调。'
+  return playerCapabilityWarning.value || playerError.value || recorderError.value || ''
+})
+
+const currentReplyState = computed(() => {
+  const message = messages.value.find((item) => item.responseId === activeResponseId.value)
+  if (!message) return '等待输入'
+  if (message.status === 'thinking') return '模型正在思考'
+  if (message.status === 'typing') return '文本正在输出'
+  if (message.status === 'speaking') return '音频已就绪，正在说话'
+  return '本轮回复完成'
+})
+
+const emotionLabel = (emotion) => {
+  const labels = {
+    joy: '开心',
+    sadness: '难过',
+    anger: '生气',
+    surprise: '惊讶',
+    fear: '紧张',
+    disgust: '厌恶',
+    shy: '害羞',
+    neutral: '平静',
   }
-  
-  if (savedHistoryUid) {
-    currentHistoryUid.value = savedHistoryUid
-  }
+  return labels[emotion] || labels.neutral
 }
 
-// 保存会话数据到localStorage
+const makeId = (prefix = 'msg') => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+
 const saveSession = () => {
-  localStorage.setItem('digiHuman_messages', JSON.stringify(messages.value))
+  localStorage.setItem('digiHuman_messages_v2', JSON.stringify(messages.value))
   if (currentHistoryUid.value) {
     localStorage.setItem('digiHuman_currentHistoryUid', currentHistoryUid.value)
   }
 }
 
-// 保存clientId到localStorage
-const saveClientId = (id) => {
-  clientId = id
-  localStorage.setItem('digiHuman_clientId', id)
-}
+const restoreSession = () => {
+  const storedMessages = localStorage.getItem('digiHuman_messages_v2')
+  const storedHistoryUid = localStorage.getItem('digiHuman_currentHistoryUid')
 
-// 定期保存会话数据
-let saveInterval = null
-const startAutoSave = () => {
-  saveInterval = setInterval(() => {
-    if (messages.value.length > 0) {
-      saveSession()
+  if (storedMessages) {
+    try {
+      const parsedMessages = JSON.parse(storedMessages)
+      if (Array.isArray(parsedMessages) && parsedMessages.length) {
+        messages.value = parsedMessages
+      }
+    } catch (error) {
+      console.warn('Failed to restore messages:', error)
     }
-  }, 5000) // 每5秒自动保存一次
-}
+  }
 
-const stopAutoSave = () => {
-  if (saveInterval) {
-    clearInterval(saveInterval)
-    saveInterval = null
+  if (storedHistoryUid) {
+    currentHistoryUid.value = storedHistoryUid
   }
 }
 
-// 同步本地消息到后端
-const syncLocalMessagesToBackend = () => {
-  if (!ws || !connected.value || !currentHistoryUid.value) return
-  
-  const localMessages = messages.value
-  if (localMessages.length === 0) return
-  
-  // 过滤掉系统欢迎消息
-  const messagesToSync = localMessages.filter(msg => 
-    msg.role !== 'assistant' || 
-    !msg.content.includes('你好！我是你的虚拟助手。有什么我可以帮助你的吗？')
-  )
-  
-  if (messagesToSync.length === 0) return
-  
-  console.log('Syncing local messages to backend:', messagesToSync.length, 'messages')
-  
-  // 发送同步请求到后端
-  ws.send(JSON.stringify({
-    type: 'sync-local-messages',
-    history_uid: currentHistoryUid.value,
-    messages: messagesToSync.map(msg => ({
-      role: msg.role === 'user' ? 'human' : 'ai',
-      content: msg.content,
-      timestamp: new Date().toISOString()
-    }))
-  }))
+const scrollToBottom = async () => {
+  await nextTick()
+  const container = document.getElementById('chatContainer')
+  if (container) {
+    container.scrollTop = container.scrollHeight
+  }
 }
 
-// 格式化时间
+const dispatchLive2DCommand = (command) => {
+  if (!command) return
+  window.dispatchEvent(new CustomEvent('digihuman-live2d-command', { detail: command }))
+}
+
+const dispatchLive2DTalkEvent = (type, detail = {}) => {
+  window.dispatchEvent(new CustomEvent(type, { detail }))
+}
+
+const getHistoryTitle = (history) => {
+  const content = history?.latest_message?.content || ''
+  if (!content) return '新对话'
+  return content.length > 18 ? `${content.slice(0, 18)}...` : content
+}
+
+const getHistoryPreview = (history) => history?.latest_message?.content || '暂无消息'
+
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
-  const date = new Date(timestamp)
-  return date.toLocaleString('zh-CN', { 
-    month: 'short', 
-    day: 'numeric', 
-    hour: '2-digit', 
-    minute: '2-digit' 
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
-// 获取历史记录标题
-const getHistoryTitle = (history) => {
-  if (!history) return '新对话'
-  if (history.is_new) return '新对话'
-  const content = history.latest_message?.content || ''
-  return content.length > 20 ? content.substring(0, 20) + '...' : content || '新对话'
+const ensurePendingAssistant = () => {
+  const lastMessage = messages.value[messages.value.length - 1]
+  if (lastMessage?.role === 'assistant' && ['thinking', 'typing', 'speaking'].includes(lastMessage.status)) {
+    return lastMessage
+  }
+
+  const message = {
+    id: makeId('assistant'),
+    role: 'assistant',
+    content: '',
+    status: 'thinking',
+    responseId: null,
+    emotion: 'neutral',
+  }
+  messages.value.push(message)
+  return message
 }
 
-// 获取历史记录预览
-const getHistoryPreview = (history) => {
-  if (!history || !history.latest_message) return '暂无消息'
-  if (history.is_new) return '暂无消息'
-  return history.latest_message.content
+const animateAssistantText = (message, text) => {
+  if (typingTimer) {
+    clearInterval(typingTimer)
+    typingTimer = null
+  }
+
+  message.content = ''
+  message.status = 'typing'
+
+  const chars = Array.from(text || '')
+  let index = 0
+  const step = chars.length > 80 ? 3 : 2
+
+  typingTimer = window.setInterval(() => {
+    index = Math.min(chars.length, index + step)
+    message.content = chars.slice(0, index).join('')
+    scrollToBottom()
+
+    if (index >= chars.length) {
+      clearInterval(typingTimer)
+      typingTimer = null
+      if (message.status === 'typing') {
+        message.status = 'ready'
+      }
+      saveSession()
+    }
+  }, 22)
 }
 
-// 筛选历史记录
-const filteredHistories = computed(() => {
-  let filtered = [...historyList.value]
-  
-  // 关键词搜索
-  if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.toLowerCase()
-    filtered = filtered.filter(history => {
-      const content = history.latest_message?.content || ''
-      return content.toLowerCase().includes(keyword)
-    })
-  }
-  
-  // 时间筛选
-  const now = new Date()
-  if (filterType.value === 'today') {
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    filtered = filtered.filter(history => {
-      const historyDate = new Date(history.timestamp)
-      return historyDate >= today
-    })
-  } else if (filterType.value === 'week') {
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    filtered = filtered.filter(history => {
-      const historyDate = new Date(history.timestamp)
-      return historyDate >= weekAgo
-    })
-  } else if (filterType.value === 'month') {
-    const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
-    filtered = filtered.filter(history => {
-      const historyDate = new Date(history.timestamp)
-      return historyDate >= monthAgo
-    })
-  }
-  
-  return filtered
-})
+const handleResponseAudio = async (data) => {
+  runtimeWarnings.value = Array.isArray(data.warnings) ? data.warnings.slice(0, 3) : runtimeWarnings.value
 
-// 连接WebSocket
-const connectWebSocket = () => {
+  if (!data.audio) {
+    return
+  }
+
+  const message = messages.value.find((item) => item.responseId === data.response_id)
+  if (message) {
+    message.status = 'speaking'
+  }
+
+  dispatchLive2DTalkEvent('digihuman-live2d-talk-start', currentParams.value.live2d || {})
+
   try {
-    // 使用 Vite 代理连接到后端 WebSocket 服务
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws`
-    ws = new WebSocket(wsUrl)
-    
-    ws.onopen = () => {
-      console.log('WebSocket connected')
-      connected.value = true
-    }
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        handleWebSocketMessage(data)
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error)
-      }
-    }
-    
-    ws.onclose = () => {
-      console.log('WebSocket disconnected')
-      connected.value = false
-      setTimeout(connectWebSocket, 3000)
-    }
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      connected.value = false
-    }
+    await playBase64Audio(data.audio, data.audio_format || 'audio/wav')
   } catch (error) {
-    console.error('Failed to connect WebSocket:', error)
-    connected.value = false
-    setTimeout(connectWebSocket, 3000)
+    runtimeWarnings.value = [{
+      code: 'tts_playback_failed',
+      message: playerError.value || '语音播放失败，已保留文本回复。',
+    }]
+    console.error('Audio playback failed:', error)
+  } finally {
+    dispatchLive2DTalkEvent('digihuman-live2d-talk-end', currentParams.value.live2d || {})
+    if (message) {
+      message.status = 'ready'
+    }
+    saveSession()
   }
 }
 
-// 当前情绪状态
-const currentEmotion = ref({
-  user: { emotion: 'neutral', confidence: 0.5, intensity: 'low' },
-  assistant: { emotion: 'neutral', confidence: 0.5, intensity: 'low' }
-})
+const handleFullResponse = async (data) => {
+  runtimeWarnings.value = Array.isArray(data.warnings) ? data.warnings.slice(0, 3) : []
 
-// 当前TTS和Live2D参数（用于调试展示）
-const currentParams = ref({
-  tts: null,
-  live2d: null
-})
-
-// 是否显示参数详情
-const showParamsDetail = ref(false)
-
-// 处理WebSocket消息
-const handleWebSocketMessage = (data) => {
-  switch (data.type) {
-    case 'connection_established':
-      saveClientId(data.client_id)
-      console.log('Connection established with client ID:', clientId)
-      fetchHistoryList()
-      // 检查是否有本地恢复的消息需要同步到后端
-      if (currentHistoryUid.value && messages.value.length > 0) {
-        // 延迟一下确保历史列表已加载
-        setTimeout(() => {
-          syncLocalMessagesToBackend()
-        }, 500)
-      }
-      break
-      
-    case 'chat_response':
-    case 'full-text':
-      // 兼容旧格式
-      const content = data.message || data.text
-      if (content) {
-        // 检查是否有语音识别的文本
-        if (data.user_text) {
-          // 添加用户的语音输入
-          messages.value.push({ role: 'user', content: data.user_text })
-        }
-        // 添加助手的响应
-        messages.value.push({ role: 'assistant', content })
-        saveSession() // 保存会话
-        scrollToBottom()
-        
-        // 如果有音频数据，播放TTS音频
-        if (data.audio) {
-          isPlayingAudio.value = true
-          const audioFormat = data.audio_format || 'audio/wav'
-          playBase64Audio(data.audio, audioFormat).catch(err => {
-            console.error('TTS playback error:', err)
-          }).finally(() => {
-            isPlayingAudio.value = false
-          })
-        }
-      }
-      break
-      
-    case 'full-response':
-      // 新的完整响应格式，包含情绪和参数
-      handleFullResponse(data)
-      break
-      
-    case 'emotion_update':
-      // 情绪更新事件
-      if (data.source === 'user') {
-        currentEmotion.value.user = {
-          emotion: data.emotion,
-          confidence: data.confidence,
-          intensity: data.intensity
-        }
-      } else if (data.source === 'assistant') {
-        currentEmotion.value.assistant = {
-          emotion: data.emotion,
-          confidence: data.confidence,
-          intensity: data.intensity
-        }
-        // 更新参数显示
-        if (data.tts_params) {
-          currentParams.value.tts = data.tts_params
-        }
-        if (data.live2d_params) {
-          currentParams.value.live2d = data.live2d_params
-        }
-      }
-      break
-      
-    case 'error':
-      const errorMessage = '错误: ' + data.message
-      messages.value.push({ role: 'assistant', content: errorMessage })
-      ElMessage.error(data.message || '处理失败，请重试')
-      scrollToBottom()
-      break
-      
-    case 'history-list':
-      historyList.value = data.histories || []
-      break
-      
-    case 'history-data':
-      const historyMessages = data.messages || []
-      messages.value = historyMessages.map(msg => ({
-        role: msg.role === 'human' ? 'user' : 'assistant',
-        content: msg.content
-      }))
-      if (messages.value.length === 0) {
-        messages.value.push({
-          role: 'assistant',
-          content: '你好！我是你的虚拟助手。有什么我可以帮助你的吗？'
-        })
-      }
-      scrollToBottom()
-      break
-      
-    case 'new-history-created':
-      currentHistoryUid.value = data.history_uid
-      messages.value = [{
-        role: 'assistant',
-        content: '你好！我是你的虚拟助手。有什么我可以帮助你的吗？'
-      }]
-      fetchHistoryList()
-      break
-      
-    case 'local-messages-synced':
-      console.log('Local messages synced successfully:', data.message_count, 'messages')
-      // 同步成功后重新获取历史列表，确保历史记录显示最新状态
-      fetchHistoryList()
-      break
-      
-    case 'history-deleted':
-      fetchHistoryList()
-      break
+  if (data.user_text) {
+    const lastMessage = messages.value[messages.value.length - 1]
+    if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== data.user_text) {
+      messages.value.push({
+        id: makeId('user'),
+        role: 'user',
+        content: data.user_text,
+        status: 'ready',
+      })
+    }
   }
-}
 
-// 处理完整响应（包含情绪和参数）
-const handleFullResponse = (data) => {
-  console.log('Received full response:', data)
-  
-  // 更新情绪状态
   if (data.emotion) {
     currentEmotion.value = data.emotion
   }
-  
-  // 更新参数显示
   if (data.tts_params) {
     currentParams.value.tts = data.tts_params
   }
   if (data.live2d_params) {
     currentParams.value.live2d = data.live2d_params
   }
-  
-  // 处理文本内容
-  const content = data.text?.enhanced || data.text?.original || data.text
-  if (content) {
-    // 添加助手的响应
-    const message = { 
-      role: 'assistant', 
-      content,
-      emotion: data.emotion?.assistant,
-      params: {
-        tts: data.tts_params,
-        live2d: data.live2d_params
+  currentTtsInstruct.value = data.tts_instruct || ''
+
+  const content = data.text?.enhanced || data.text?.original || data.text || ''
+  const assistantMessage = ensurePendingAssistant()
+  assistantMessage.responseId = data.response_id
+  assistantMessage.emotion = data.emotion?.assistant?.emotion || 'neutral'
+  assistantMessage.params = {
+    tts: data.tts_params,
+    live2d: data.live2d_params,
+  }
+  activeResponseId.value = data.response_id
+
+  dispatchLive2DCommand(data.live2d_command)
+  animateAssistantText(assistantMessage, content)
+  saveSession()
+  await scrollToBottom()
+
+  if (data.audio) {
+    await handleResponseAudio({
+      type: 'response-audio',
+      response_id: data.response_id,
+      audio: data.audio,
+      audio_format: data.audio_format,
+      warnings: data.warnings,
+    })
+  }
+}
+
+const handleWebSocketMessage = async (data) => {
+  switch (data.type) {
+    case 'connection_established':
+      clientId.value = data.client_id
+      localStorage.setItem('digiHuman_clientId', data.client_id)
+      connected.value = true
+      runtimeWarnings.value = []
+      fetchHistoryList()
+      break
+
+    case 'full-response':
+      await handleFullResponse(data)
+      break
+
+    case 'response-audio':
+      await handleResponseAudio(data)
+      break
+
+    case 'emotion_update':
+      if (data.source === 'user') {
+        currentEmotion.value.user = {
+          emotion: data.emotion,
+          confidence: data.confidence,
+          intensity: data.intensity,
+        }
+      } else if (data.source === 'assistant') {
+        currentEmotion.value.assistant = {
+          emotion: data.emotion,
+          confidence: data.confidence,
+          intensity: data.intensity,
+        }
       }
-    }
-    messages.value.push(message)
-    saveSession()
-    scrollToBottom()
-    
-    // 播放TTS音频
-    if (data.audio) {
-      isPlayingAudio.value = true
-      const audioFormat = data.audio_format || 'audio/wav'
-      playBase64Audio(data.audio, audioFormat).catch(err => {
-        console.error('TTS playback error:', err)
-      }).finally(() => {
-        isPlayingAudio.value = false
-      })
+      break
+
+    case 'history-list':
+      historyList.value = data.histories || []
+      break
+
+    case 'history-data':
+      messages.value = (data.messages || []).map((msg) => ({
+        id: makeId(msg.role === 'human' ? 'user' : 'assistant'),
+        role: msg.role === 'human' ? 'user' : 'assistant',
+        content: msg.content,
+        status: 'ready',
+        emotion: msg.role === 'human' ? null : 'neutral',
+      }))
+      if (!messages.value.length) {
+        messages.value = [defaultAssistantMessage]
+      }
+      saveSession()
+      await scrollToBottom()
+      break
+
+    case 'new-history-created':
+      currentHistoryUid.value = data.history_uid
+      messages.value = [defaultAssistantMessage]
+      saveSession()
+      fetchHistoryList()
+      break
+
+    case 'history-deleted':
+      fetchHistoryList()
+      break
+
+    case 'error':
+      runtimeWarnings.value = [{
+        code: 'server_error',
+        message: data.message || '处理失败，请重试。',
+      }]
+      ElMessage.error(data.message || '处理失败，请重试。')
+      break
+
+    default:
+      break
+  }
+}
+
+const connectWebSocket = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsUrl = `${protocol}//${window.location.host}/ws`
+  ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    connected.value = true
+  }
+
+  ws.onmessage = async (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      await handleWebSocketMessage(data)
+    } catch (error) {
+      console.error('Failed to parse WebSocket message:', error)
     }
   }
-  
-  // 触发Live2D动画
-  if (data.live2d_command) {
-    window.dispatchEvent(
-      new CustomEvent('digihuman-live2d-command', {
-        detail: data.live2d_command
-      })
-    )
 
-    if (window.live2dApp?.handleCommand) {
-      window.live2dApp.handleCommand(data.live2d_command)
+  ws.onclose = () => {
+    connected.value = false
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
     }
+    reconnectTimer = window.setTimeout(connectWebSocket, 2000)
+  }
+
+  ws.onerror = (error) => {
+    connected.value = false
+    console.error('WebSocket error:', error)
   }
 }
 
-// 情绪标签映射
-const emotionLabels = {
-  joy: { text: '开心', color: '#67C23A', icon: 'Happy' },
-  sadness: { text: '悲伤', color: '#909399', icon: 'Sad' },
-  anger: { text: '生气', color: '#F56C6C', icon: 'Angry' },
-  surprise: { text: '惊讶', color: '#E6A23C', icon: 'Surprised' },
-  fear: { text: '害怕', color: '#8E44AD', icon: 'Scared' },
-  disgust: { text: '厌恶', color: '#795548', icon: 'Disgusted' },
-  neutral: { text: '平静', color: '#409EFF', icon: 'Neutral' }
-}
-
-// 获取情绪显示信息
-const getEmotionInfo = (emotion) => {
-  return emotionLabels[emotion] || emotionLabels.neutral
-}
-
-// 获取历史列表
 const fetchHistoryList = () => {
   if (!ws || !connected.value) return
-  ws.send(JSON.stringify({
-    type: 'fetch-history-list'
-  }))
+  ws.send(JSON.stringify({ type: 'fetch-history-list' }))
 }
 
-// 创建新历史
 const createNewHistory = () => {
   if (!ws || !connected.value) return
-  saveSession() // 创建新历史前保存当前会话
-  ws.send(JSON.stringify({
-    type: 'create-new-history'
-  }))
+  ws.send(JSON.stringify({ type: 'create-new-history' }))
 }
 
-// 切换历史
 const switchHistory = (historyUid) => {
-  if (!ws || !connected.value || historyUid === currentHistoryUid.value) return
-  saveSession() // 切换前保存当前会话
+  if (!ws || !connected.value || currentHistoryUid.value === historyUid) return
   currentHistoryUid.value = historyUid
-  localStorage.removeItem('digiHuman_messages') // 清除本地保存的当前对话
-  localStorage.setItem('digiHuman_currentHistoryUid', historyUid) // 更新当前历史ID
   ws.send(JSON.stringify({
     type: 'fetch-and-set-history',
-    history_uid: historyUid
+    history_uid: historyUid,
   }))
 }
 
-// 筛选历史记录
-const filterHistories = () => {
-  // 使用 computed 属性自动更新
-}
-
-// 处理历史记录操作
-const handleHistoryAction = (command, historyUid) => {
-  selectedHistoryUid.value = historyUid
-  
-  switch (command) {
-    case 'preview':
-      previewHistory.value = historyList.value.find(h => h.uid === historyUid)
-      previewDialogVisible.value = true
-      break
-    case 'rename':
-      newHistoryName.value = getHistoryTitle(historyList.value.find(h => h.uid === historyUid))
-      renameDialogVisible.value = true
-      break
-    case 'delete':
-      deleteHistory(historyUid)
-      break
-  }
-}
-
-// 加载预览的历史记录
-const loadPreviewHistory = () => {
-  if (!selectedHistoryUid.value || !ws || !connected.value) return
-  previewDialogVisible.value = false
-  switchHistory(selectedHistoryUid.value)
-}
-
-// 确认重命名
-const confirmRename = () => {
-  if (!newHistoryName.value.trim() || !selectedHistoryUid.value || !ws || !connected.value) return
-  
-  // 这里可以添加重命名功能，如果后端支持的话
-  console.log('Rename history:', selectedHistoryUid.value, 'to:', newHistoryName.value)
-  renameDialogVisible.value = false
-  newHistoryName.value = ''
-}
-
-// 删除历史记录
 const deleteHistory = (historyUid) => {
   if (!ws || !connected.value) return
-  
-  if (confirm('确定要删除这条历史记录吗？')) {
-    ws.send(JSON.stringify({
-      type: 'delete-history',
-      history_uid: historyUid
-    }))
-    
-    if (historyUid === currentHistoryUid.value) {
-      currentHistoryUid.value = null
-      messages.value = [{
-        role: 'assistant',
-        content: '你好！我是你的虚拟助手。有什么我可以帮助你的吗？'
-      }]
-    }
-  }
+  if (!window.confirm('确定删除这条对话历史吗？')) return
+  ws.send(JSON.stringify({
+    type: 'delete-history',
+    history_uid: historyUid,
+  }))
 }
 
-// 发送消息
-const sendMessage = () => {
-  if (!inputMessage.value.trim() || !connected.value || !ws) return
-  
+const sendMessage = async () => {
   const message = inputMessage.value.trim()
-  messages.value.push({ role: 'user', content: message })
-  saveSession() // 保存会话
+  if (!message || !connected.value || !ws) return
+
+  await primeAudio()
+
+  messages.value.push({
+    id: makeId('user'),
+    role: 'user',
+    content: message,
+    status: 'ready',
+  })
+
+  ensurePendingAssistant()
   inputMessage.value = ''
-  scrollToBottom()
-  
+  runtimeWarnings.value = []
+  await scrollToBottom()
+  saveSession()
+
   ws.send(JSON.stringify({
     type: 'text-input',
     text: message,
-    client_id: clientId
+    client_id: clientId.value,
   }))
 }
 
-// 切换语音录制状态
 const toggleVoiceRecording = async () => {
   if (isRecording.value) {
-    // 停止录音并发送
     const audioBase64 = await stopRecording()
     isRecording.value = false
-    
-    if (audioBase64) {
-      // 显示处理中提示
-      ElMessage.info('正在处理语音，请稍候...')
-      
-      // 发送音频数据到后端
-      ws.send(JSON.stringify({
-        type: 'mic-audio-data',
-        audio: audioBase64,
-        client_id: clientId
-      }))
-      
-      // 发送结束标记
-      ws.send(JSON.stringify({
-        type: 'mic-audio-end',
-        client_id: clientId
-      }))
-    } else {
-      ElMessage.warning('录音失败，请重试')
-    }
-  } else {
-    // 请求权限并开始录音
-    const hasPermission = await requestPermission()
-    if (!hasPermission) {
-      ElMessage.error(recorderError.value || '无法获取麦克风权限')
+
+    if (!audioBase64 || !ws || !connected.value) {
+      ElMessage.warning('录音失败，请重试。')
       return
     }
-    
-    const started = await startRecording()
-    if (started) {
-      isRecording.value = true
-    } else {
-      ElMessage.error('启动录音失败，请检查麦克风权限')
-    }
+
+    ensurePendingAssistant()
+    ws.send(JSON.stringify({
+      type: 'mic-audio-data',
+      audio: audioBase64,
+      client_id: clientId.value,
+    }))
+    ws.send(JSON.stringify({
+      type: 'mic-audio-end',
+      client_id: clientId.value,
+    }))
+    return
   }
+
+  const granted = await requestPermission()
+  if (!granted) {
+    ElMessage.error(recorderError.value || '无法获取麦克风权限。')
+    return
+  }
+
+  await primeAudio()
+
+  const started = await startRecording()
+  if (!started) {
+    ElMessage.error('启动录音失败，请检查浏览器权限。')
+    return
+  }
+
+  isRecording.value = true
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
-  setTimeout(() => {
-    const chatContainer = document.getElementById('chatContainer')
-    if (chatContainer) {
-      chatContainer.scrollTop = chatContainer.scrollHeight
-    }
-  }, 100)
-}
-
-// 组件挂载时连接WebSocket
-onMounted(() => {
-  restoreSession() // 先尝试恢复本地会话
+onMounted(async () => {
+  restoreSession()
   connectWebSocket()
-  scrollToBottom()
-  startAutoSave() // 启动自动保存
+  await scrollToBottom()
 })
 
-// 组件卸载时关闭WebSocket
 onUnmounted(() => {
-  saveSession() // 保存当前会话
-  stopAutoSave() // 停止自动保存
+  saveSession()
+  if (typingTimer) {
+    clearInterval(typingTimer)
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+  }
+  stopPlayback()
   if (ws) {
     ws.close()
   }
 })
 </script>
-
-<style scoped>
-.message {
-  padding: 12px 16px;
-  border-radius: 18px;
-  max-width: 80%;
-  word-wrap: break-word;
-}
-
-.user-message {
-  background-color: #3b82f6;
-  color: white;
-  align-self: flex-end;
-  margin-left: auto;
-  border-bottom-right-radius: 4px;
-}
-
-.assistant-message {
-  background-color: #f3f4f6;
-  color: #374151;
-  align-self: flex-start;
-  border-bottom-left-radius: 4px;
-}
-
-.history-item {
-  background-color: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
-}
-
-.history-item:hover {
-  background-color: rgba(255, 255, 255, 1);
-  border-color: rgba(0, 0, 0, 0.25);
-}
-
-.history-item-container {
-  position: relative;
-}
-
-.preview-message {
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-}
-
-.drop-shadow-lg {
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-</style>

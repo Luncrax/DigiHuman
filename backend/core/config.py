@@ -83,6 +83,7 @@ class Config(BaseSettings):
     ASR_ENABLED: bool = True
     TTS_ENABLED: bool = True
     ASR_SERVICE: str = "openai_whisper"  # Options: openai_whisper, vosk, etc.
+    ASR_VOSK_MODEL_PATH: str = "models/vosk-model-small-cn-0.22"
     TTS_SERVICE: str = "openai_tts"  # Options: openai_tts, elevenlabs, etc.
     TTS_VOICE: str = "alloy"
     TTS_MODEL: str = "tts-1"
@@ -111,6 +112,7 @@ class Config(BaseSettings):
     # WebSocket settings
     WS_MAX_CONNECTIONS: int = 100
     WS_TIMEOUT: int = 300  # 5 minutes timeout
+    EMOTION_ANALYSIS_TIMEOUT: float = 1.2
 
     @field_validator("DEBUG", "ASR_ENABLED", "TTS_ENABLED", "LIVE2D_ENABLED", mode="before")
     @classmethod

@@ -163,7 +163,7 @@ export async function createPixiLive2d(container, options = {}) {
 
   const {
     modelPath = '/live2d_models/Mao/Mao.model3.json',
-    scaleMultiplier = 0.22,
+    scaleMultiplier = 0.34,
     autoHitMotion = 'TapBody',
   } = options
 

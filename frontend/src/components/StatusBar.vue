@@ -1,74 +1,54 @@
 <template>
-  <div class="fixed bottom-0 left-0 right-0 bg-white/70 backdrop-blur-xl py-3 px-5 flex justify-between items-center z-50 border-t border-gray-200/50 rounded-t-xl mx-5 shadow-sm mb-4">
-    <div class="flex items-center gap-2 font-medium text-gray-700">
-      <div class="status-dot" :class="{ connected: isConnected }"></div>
-      <span>{{ statusText }}</span>
-    </div>
-    <div class="flex gap-3">
-      <el-button v-if="!isConnected" size="small" type="primary" @click="connect">
-        连接
-      </el-button>
-      <el-button v-else size="small" type="danger" @click="disconnect">
-        断开
-      </el-button>
+  <div class="fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
+    <div class="panel mx-auto flex w-full max-w-[1280px] flex-col gap-3 rounded-[26px] px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="status-chip">
+          <span class="status-dot" :class="overallStatus"></span>
+          <span>系统状态 {{ overallStatusText }}</span>
+        </div>
+        <div v-for="service in compactServices" :key="service.key" class="status-chip">
+          <span class="status-dot" :class="service.status"></span>
+          <span>{{ service.label }}</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 self-end md:self-auto">
+        <span class="hidden text-sm text-[var(--muted)] lg:inline">
+          {{ statusMessage }}
+        </span>
+        <button class="action-btn secondary" type="button" :disabled="healthLoading" @click="fetchHealthDetail">
+          {{ healthLoading ? '刷新中...' : '刷新状态' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useHealthDetail } from '../composables/useHealthDetail'
 
-const isConnected = ref(false)
-const statusText = ref('等待连接...')
-let ws = null
+const {
+  healthError,
+  healthLoading,
+  lastUpdated,
+  sortedServices,
+  overallStatus,
+  overallStatusText,
+  fetchHealthDetail,
+} = useHealthDetail()
 
-const connect = () => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/ws`
-  
-  try {
-    ws = new WebSocket(wsUrl)
-    
-    ws.onopen = () => {
-      isConnected.value = true
-      statusText.value = '已连接'
-    }
-    
-    ws.onclose = () => {
-      isConnected.value = false
-      statusText.value = '已断开'
-    }
-    
-    ws.onerror = () => {
-      isConnected.value = false
-      statusText.value = '连接错误'
-    }
-  } catch (error) {
-    statusText.value = '连接失败'
-  }
-}
+const compactServices = computed(() => sortedServices.value.slice(0, 4))
 
-const disconnect = () => {
-  if (ws) {
-    ws.close()
-  }
-}
+const statusMessage = computed(() => {
+  if (healthError.value) return `状态检查失败：${healthError.value}`
+  if (!lastUpdated.value) return '等待首次状态检查'
+  return `上次刷新 ${lastUpdated.value.toLocaleTimeString()}`
+})
 
 onMounted(() => {
-  setTimeout(connect, 1000)
+  if (!lastUpdated.value && !healthLoading.value) {
+    fetchHealthDetail()
+  }
 })
 </script>
-
-<style scoped>
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: #ff3b30;
-  transition: background-color 0.3s ease;
-}
-
-.status-dot.connected {
-  background-color: #34c759;
-}
-</style>

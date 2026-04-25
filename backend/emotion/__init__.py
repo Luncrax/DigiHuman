@@ -7,10 +7,18 @@ from .langchain_emotion_analyzer import (
     get_emotion_analyzer,
     analyze_emotion
 )
+from .emotion_controller import (
+    EmotionController,
+    EmotionControlResult,
+    get_emotion_controller,
+)
 
 __all__ = [
     'LangChainEmotionAnalyzer',
     'EmotionAnalysisResult',
     'get_emotion_analyzer',
-    'analyze_emotion'
+    'analyze_emotion',
+    'EmotionController',
+    'EmotionControlResult',
+    'get_emotion_controller',
 ]

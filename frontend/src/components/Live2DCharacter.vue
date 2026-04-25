@@ -2,9 +2,14 @@
   <div class="live2d-wrapper" :class="{ hidden: !showCharacter }">
     <div ref="canvasRef" class="live2d-canvas"></div>
 
-    <div v-if="currentEmotion" class="emotion-indicator" :class="currentEmotion">
+    <div
+      v-if="currentEmotion"
+      class="emotion-indicator"
+      :class="[currentEmotion, `state-${currentState}`]"
+    >
       <span class="emotion-icon">{{ getEmotionIcon(currentEmotion) }}</span>
       <span class="emotion-text">{{ getEmotionText(currentEmotion) }}</span>
+      <span class="state-badge">{{ currentState }}</span>
     </div>
 
     <div class="live2d-controls">
@@ -17,7 +22,7 @@
       <el-button circle size="small" class="control-btn" title="动作演示" @click="playMotion('mtn_01')">
         <el-icon><VideoPlay /></el-icon>
       </el-button>
-      <el-button circle size="small" class="control-btn" title="说话演示" @click="speak">
+      <el-button circle size="small" class="control-btn" title="说话演示" @click="simulateTalk">
         <el-icon><Microphone /></el-icon>
       </el-button>
       <el-button circle size="small" class="control-btn" title="重置" @click="resetToNeutral">
@@ -34,9 +39,35 @@ import { createPixiLive2d } from '@/lib/live2d/pixiLive2d'
 
 const showCharacter = ref(true)
 const currentEmotion = ref('neutral')
+const currentState = ref('idle')
 const canvasRef = ref(null)
 
 let live2dRuntime = null
+let currentProfile = null
+let activeCommand = null
+let speechContext = null
+let speechActive = false
+let reactTimer = null
+let talkFallbackTimer = null
+let tweenFrame = null
+let lipSyncValue = 0
+let parameterState = {
+  angle_x: 0,
+  angle_y: 0,
+  angle_z: 0,
+  eye_l_open: 1,
+  eye_r_open: 1,
+  eye_ball_x: 0,
+  eye_ball_y: 0,
+  mouth_open: 0,
+  breath: 0.4,
+}
+
+const STATE_PRIORITY = {
+  idle: 0,
+  talk: 1,
+  react: 2,
+}
 
 const emotionAliases = {
   happy: 'joy',
@@ -80,6 +111,216 @@ const normalizeEmotion = (emotion) => {
 const getEmotionIcon = (emotion) => emotionIcons[normalizeEmotion(emotion)] || emotionIcons.neutral
 const getEmotionText = (emotion) => emotionTexts[normalizeEmotion(emotion)] || emotionTexts.neutral
 
+const clearTimer = (timer) => {
+  if (timer) {
+    window.clearTimeout(timer)
+  }
+  return null
+}
+
+const mergeParameters = (...parameterSets) => {
+  return parameterSets.reduce((acc, item) => {
+    Object.entries(item || {}).forEach(([key, value]) => {
+      const numeric = Number(value)
+      if (!Number.isNaN(numeric)) {
+        acc[key] = numeric
+      }
+    })
+    return acc
+  }, {})
+}
+
+const tweenParameters = (target = {}, duration = 320) => {
+  if (!live2dRuntime) {
+    return
+  }
+
+  const to = mergeParameters(parameterState, target)
+  const from = { ...parameterState }
+  const startAt = performance.now()
+
+  if (tweenFrame) {
+    cancelAnimationFrame(tweenFrame)
+  }
+
+  const step = (now) => {
+    const progress = Math.min(1, (now - startAt) / Math.max(duration, 1))
+    const eased = 1 - Math.pow(1 - progress, 3)
+    const frame = {}
+
+    Object.keys(to).forEach((key) => {
+      const start = Number(from[key] ?? 0)
+      const end = Number(to[key] ?? 0)
+      frame[key] = start + (end - start) * eased
+    })
+
+    if (speechActive) {
+      frame.mouth_open = Math.max(frame.mouth_open ?? 0, lipSyncValue)
+    }
+
+    parameterState = frame
+    live2dRuntime.updateParameters(frame)
+
+    if (progress < 1) {
+      tweenFrame = requestAnimationFrame(step)
+    } else {
+      tweenFrame = null
+    }
+  }
+
+  tweenFrame = requestAnimationFrame(step)
+}
+
+const applyLipSync = (mouthOpen = 0) => {
+  lipSyncValue = Math.max(0, Math.min(1, Number(mouthOpen) || 0))
+  if (!live2dRuntime || !speechActive) {
+    return
+  }
+
+  const frame = {
+    ...parameterState,
+    mouth_open: Math.max(parameterState.mouth_open ?? 0, lipSyncValue),
+  }
+  live2dRuntime.updateParameters(frame)
+}
+
+const deriveProfile = (command = {}) => {
+  const emotion = normalizeEmotion(command.emotion)
+  const expression = command.expression || 'exp_01'
+  const durationMs = Math.max(900, Number(command.duration ? command.duration * 1000 : command.speech_duration_ms || 2200))
+  const transitionMs = Math.max(160, Number(command.transition_ms || 320))
+  const baseParameters = mergeParameters(command.parameters)
+  const idleParameters = mergeParameters(baseParameters, command.idle_parameters, { mouth_open: 0, breath: baseParameters.breath ?? 0.4 })
+  const talkParameters = mergeParameters(baseParameters, command.talk_parameters)
+  const reactParameters = mergeParameters(baseParameters, command.react_parameters)
+
+  return {
+    emotion,
+    priority: Number(command.priority ?? STATE_PRIORITY[command.state || 'react'] ?? 0),
+    durationMs,
+    transitionMs,
+    recoverTo: command.recover_to || 'idle',
+    idle: {
+      motion: command.idle_motion || 'idle',
+      expression: command.idle_expression || expression,
+      parameters: idleParameters,
+    },
+    talk: {
+      motion: command.talk_motion || 'talk',
+      expression: command.talk_expression || expression,
+      parameters: talkParameters,
+      durationMs: Number(command.speech_duration_ms || durationMs),
+    },
+    react: {
+      motion: command.react_motion || command.motion || 'idle',
+      expression,
+      parameters: reactParameters,
+    },
+  }
+}
+
+const applyStateProfile = async (stateName, profile) => {
+  if (!live2dRuntime || !profile) {
+    return
+  }
+
+  const target = profile[stateName]
+  if (!target) {
+    return
+  }
+
+  currentState.value = stateName
+  currentEmotion.value = profile.emotion || 'neutral'
+
+  if (target.expression) {
+    await live2dRuntime.setExpression(target.expression).catch((error) => {
+      console.error('Failed to set expression:', error)
+    })
+  }
+
+  if (target.motion) {
+    await live2dRuntime.playMotion(target.motion).catch((error) => {
+      console.error('Failed to play motion:', error)
+    })
+  }
+
+  tweenParameters(target.parameters, profile.transitionMs)
+}
+
+const enterIdleState = async (profile = currentProfile) => {
+  if (!profile) {
+    return
+  }
+
+  reactTimer = clearTimer(reactTimer)
+  talkFallbackTimer = clearTimer(talkFallbackTimer)
+  await applyStateProfile('idle', profile)
+}
+
+const enterTalkState = async (profile = speechContext || currentProfile) => {
+  if (!profile) {
+    return
+  }
+
+  if (currentState.value === 'react') {
+    speechContext = profile
+    return
+  }
+
+  await applyStateProfile('talk', profile)
+  talkFallbackTimer = clearTimer(talkFallbackTimer)
+  talkFallbackTimer = window.setTimeout(() => {
+    if (!speechActive) {
+      enterIdleState(profile)
+    }
+  }, profile.talk.durationMs)
+}
+
+const enterReactState = async (profile) => {
+  if (!profile) {
+    return
+  }
+
+  currentProfile = profile
+  reactTimer = clearTimer(reactTimer)
+  await applyStateProfile('react', profile)
+
+  reactTimer = window.setTimeout(() => {
+    reactTimer = null
+    if (speechActive) {
+      enterTalkState(speechContext || profile)
+      return
+    }
+
+    if (profile.recoverTo === 'idle') {
+      enterIdleState(profile)
+    }
+  }, profile.durationMs)
+}
+
+const handleTalkStart = async (detail = {}) => {
+  speechActive = true
+  if (detail?.emotion || detail?.motion || detail?.talk_motion) {
+    speechContext = deriveProfile(detail)
+  } else if (!speechContext) {
+    speechContext = currentProfile
+  }
+
+  if (currentState.value !== 'react') {
+    await enterTalkState(speechContext || currentProfile)
+  }
+}
+
+const handleTalkEnd = async () => {
+  speechActive = false
+  lipSyncValue = 0
+  talkFallbackTimer = clearTimer(talkFallbackTimer)
+
+  if (currentState.value === 'talk') {
+    await enterIdleState(currentProfile)
+  }
+}
+
 const initLive2D = async () => {
   if (!canvasRef.value || live2dRuntime) {
     return
@@ -88,14 +329,31 @@ const initLive2D = async () => {
   try {
     live2dRuntime = await createPixiLive2d(canvasRef.value, {
       modelPath: '/live2d_models/Mao/Mao.model3.json',
-      scaleMultiplier: 0.2,
+      scaleMultiplier: 0.36,
     })
+
+    currentProfile = deriveProfile({
+      emotion: 'neutral',
+      state: 'idle',
+      expression: 'exp_01',
+      idle_motion: 'idle',
+      talk_motion: 'talk',
+      react_motion: 'idle',
+      parameters: parameterState,
+      idle_parameters: parameterState,
+      talk_parameters: { ...parameterState, mouth_open: 0.22, breath: 0.45 },
+      react_parameters: parameterState,
+      duration: 1.2,
+    })
+    await enterIdleState(currentProfile)
 
     window.live2dApp = {
       handleCommand: handleEmotionCommand,
       playMotion,
       setExpression,
       resetToNeutral,
+      talkStart: handleTalkStart,
+      talkEnd: handleTalkEnd,
     }
   } catch (error) {
     console.error('Pixi Live2D initialization failed:', error)
@@ -103,6 +361,13 @@ const initLive2D = async () => {
 }
 
 const destroyLive2D = () => {
+  reactTimer = clearTimer(reactTimer)
+  talkFallbackTimer = clearTimer(talkFallbackTimer)
+  if (tweenFrame) {
+    cancelAnimationFrame(tweenFrame)
+    tweenFrame = null
+  }
+
   live2dRuntime?.destroy()
   live2dRuntime = null
 
@@ -149,28 +414,74 @@ const setExpression = async (expressionName) => {
   }
 }
 
-const speak = () => {
-  if (!live2dRuntime) {
-    return
-  }
-
-  live2dRuntime.updateParameters({ mouth_open: 0.8 })
+const simulateTalk = async () => {
+  await handleTalkStart({
+    emotion: currentEmotion.value,
+    talk_motion: currentProfile?.talk?.motion || 'talk',
+    talk_parameters: currentProfile?.talk?.parameters || { mouth_open: 0.3, breath: 0.45 },
+    speech_duration_ms: 1200,
+  })
   window.setTimeout(() => {
-    live2dRuntime?.updateParameters({ mouth_open: 0.0 })
+    handleTalkEnd()
   }, 1200)
 }
 
 const resetToNeutral = async () => {
-  currentEmotion.value = 'neutral'
-  await setExpression('exp_01')
-  await playMotion('idle')
-  live2dRuntime?.updateParameters({
-    angle_x: 0,
-    angle_y: 0,
-    angle_z: 0,
-    mouth_open: 0,
-    breath: 0.4,
+  speechActive = false
+  speechContext = null
+  currentProfile = deriveProfile({
+    emotion: 'neutral',
+    state: 'idle',
+    expression: 'exp_01',
+    idle_motion: 'idle',
+    talk_motion: 'talk',
+    react_motion: 'idle',
+    parameters: {
+      angle_x: 0,
+      angle_y: 0,
+      angle_z: 0,
+      eye_l_open: 1,
+      eye_r_open: 1,
+      eye_ball_x: 0,
+      eye_ball_y: 0,
+      mouth_open: 0,
+      breath: 0.4,
+    },
+    idle_parameters: {
+      angle_x: 0,
+      angle_y: 0,
+      angle_z: 0,
+      eye_l_open: 1,
+      eye_r_open: 1,
+      eye_ball_x: 0,
+      eye_ball_y: 0,
+      mouth_open: 0,
+      breath: 0.4,
+    },
+    talk_parameters: {
+      angle_x: 0,
+      angle_y: 0,
+      angle_z: 0,
+      eye_l_open: 1,
+      eye_r_open: 1,
+      eye_ball_x: 0,
+      eye_ball_y: 0,
+      mouth_open: 0.22,
+      breath: 0.45,
+    },
+    react_parameters: {
+      angle_x: 0,
+      angle_y: 0,
+      angle_z: 0,
+      eye_l_open: 1,
+      eye_r_open: 1,
+      eye_ball_x: 0,
+      eye_ball_y: 0,
+      mouth_open: 0,
+      breath: 0.4,
+    },
   })
+  await enterIdleState(currentProfile)
 }
 
 const handleEmotionCommand = async (command) => {
@@ -178,34 +489,57 @@ const handleEmotionCommand = async (command) => {
     return
   }
 
-  if (command.emotion) {
-    currentEmotion.value = normalizeEmotion(command.emotion)
+  const profile = deriveProfile(command)
+  speechContext = profile
+
+  if (profile.priority < STATE_PRIORITY[currentState.value] && currentState.value === 'react') {
+    return
   }
 
-  if (command.expression) {
-    await setExpression(command.expression)
+  if ((command.state || 'react') === 'idle') {
+    currentProfile = profile
+    await enterIdleState(profile)
+    return
   }
 
-  if (command.motion) {
-    await playMotion(command.motion)
+  if ((command.state || 'react') === 'talk') {
+    currentProfile = profile
+    await enterTalkState(profile)
+    return
   }
 
-  if (command.parameters) {
-    live2dRuntime?.updateParameters(command.parameters)
-  }
+  await enterReactState(profile)
 }
 
 const handleCommandEvent = (event) => {
   handleEmotionCommand(event.detail)
 }
 
+const handleTalkStartEvent = (event) => {
+  handleTalkStart(event.detail)
+}
+
+const handleTalkEndEvent = () => {
+  handleTalkEnd()
+}
+
+const handleLipSyncEvent = (event) => {
+  applyLipSync(event.detail?.mouth_open)
+}
+
 onMounted(async () => {
   await initLive2D()
   window.addEventListener('digihuman-live2d-command', handleCommandEvent)
+  window.addEventListener('digihuman-live2d-talk-start', handleTalkStartEvent)
+  window.addEventListener('digihuman-live2d-talk-end', handleTalkEndEvent)
+  window.addEventListener('digihuman-live2d-lipsync', handleLipSyncEvent)
 })
 
 onUnmounted(() => {
   window.removeEventListener('digihuman-live2d-command', handleCommandEvent)
+  window.removeEventListener('digihuman-live2d-talk-start', handleTalkStartEvent)
+  window.removeEventListener('digihuman-live2d-talk-end', handleTalkEndEvent)
+  window.removeEventListener('digihuman-live2d-lipsync', handleLipSyncEvent)
   destroyLive2D()
 })
 
@@ -220,8 +554,8 @@ defineExpose({
 <style scoped>
 .live2d-wrapper {
   position: fixed;
-  bottom: 80px;
-  left: 20px;
+  bottom: 92px;
+  left: 24px;
   z-index: 1000;
   transition: all 0.3s ease;
 }
@@ -233,9 +567,11 @@ defineExpose({
 }
 
 .live2d-canvas {
-  width: 400px;
-  height: 500px;
-  border-radius: 16px;
+  width: min(34vw, 560px);
+  height: min(60vh, 760px);
+  min-width: 360px;
+  min-height: 520px;
+  border-radius: 22px;
   overflow: hidden;
 }
 
@@ -280,6 +616,20 @@ defineExpose({
   animation: emotionPulse 0.5s ease;
 }
 
+@media (max-width: 960px) {
+  .live2d-wrapper {
+    left: 12px;
+    bottom: 112px;
+  }
+
+  .live2d-canvas {
+    width: min(42vw, 420px);
+    height: min(54vh, 620px);
+    min-width: 280px;
+    min-height: 420px;
+  }
+}
+
 .emotion-icon {
   font-size: 20px;
 }
@@ -288,6 +638,23 @@ defineExpose({
   font-size: 14px;
   font-weight: 500;
   color: #333;
+}
+
+.state-badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.62);
+}
+
+.emotion-indicator.state-react .state-badge {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.emotion-indicator.state-talk .state-badge {
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .emotion-indicator.joy {

@@ -1,11 +1,15 @@
 <template>
-  <div id="app" class="min-h-screen bg-gradient-to-b from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-white transition-colors duration-300">
+  <div id="app" class="app-shell">
+    <div class="shell-grid"></div>
+    <div class="grain"></div>
     <NavBar />
-    <router-view v-slot="{ Component }">
-      <transition name="fade" mode="out-in">
-        <component :is="Component" />
-      </transition>
-    </router-view>
+    <main class="page-frame">
+      <router-view v-slot="{ Component }">
+        <transition name="page-fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </main>
     <Live2DCharacter />
     <StatusBar />
   </div>
@@ -18,20 +22,23 @@ import StatusBar from './components/StatusBar.vue'
 import Live2DCharacter from './components/Live2DCharacter.vue'
 import { useTheme } from './composables/useTheme'
 
+const { initTheme } = useTheme()
+
 onMounted(() => {
-  useTheme()
+  initTheme()
   console.log('DigiHuman App Started')
 })
 </script>
 
 <style>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.page-fade-enter-from,
+.page-fade-leave-to {
   opacity: 0;
+  transform: translateY(10px);
 }
 </style>
