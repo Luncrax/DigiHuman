@@ -13,16 +13,6 @@ const routes = [
     component: () => import('../views/Chat.vue')
   },
   {
-    path: '/voice',
-    name: 'Voice',
-    component: () => import('../views/Voice.vue')
-  },
-  {
-    path: '/live2d-view',
-    name: 'Live2D',
-    component: () => import('../views/Live2D.vue')
-  },
-  {
     path: '/character',
     name: 'Character',
     component: () => import('../views/Character.vue')

@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "我好害怕"
+  },
+  {
+    "role": "assistant",
+    "content": "别怕，我在这里。可以告诉我是什么让你感到害怕吗？"
+  }
+]

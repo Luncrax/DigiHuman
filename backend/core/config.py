@@ -98,6 +98,7 @@ class Config(BaseSettings):
     QWEN3_TTS_DEVICE: str = "cuda:0"
     QWEN3_TTS_DTYPE: str = "bfloat16"
     QWEN3_TTS_FLASH_ATTN: bool = True
+    QWEN3_TTS_ENABLE_STYLE: bool = False
     QWEN3_TTS_WSL_DISTRO: str = "ubuntu"
     QWEN3_TTS_WSL_VENV: str = "flash_env"
     
@@ -114,7 +115,7 @@ class Config(BaseSettings):
     WS_TIMEOUT: int = 300  # 5 minutes timeout
     EMOTION_ANALYSIS_TIMEOUT: float = 1.2
 
-    @field_validator("DEBUG", "ASR_ENABLED", "TTS_ENABLED", "LIVE2D_ENABLED", mode="before")
+    @field_validator("DEBUG", "ASR_ENABLED", "TTS_ENABLED", "LIVE2D_ENABLED", "QWEN3_TTS_FLASH_ATTN", "QWEN3_TTS_ENABLE_STYLE", mode="before")
     @classmethod
     def parse_bool_fields(cls, value, info):
         defaults = {
@@ -122,6 +123,8 @@ class Config(BaseSettings):
             "ASR_ENABLED": True,
             "TTS_ENABLED": True,
             "LIVE2D_ENABLED": False,
+            "QWEN3_TTS_FLASH_ATTN": True,
+            "QWEN3_TTS_ENABLE_STYLE": False,
         }
         return _parse_bool(value, defaults[info.field_name])
 

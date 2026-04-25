@@ -12,30 +12,12 @@ export function useAudioPlayer() {
   let sourceNode = null
   let animationFrame = null
   let analyserBuffer = null
-
-  const primeAudio = async () => {
-    errorMessage.value = ''
-
-    try {
-      const ctx = await ensureAudioContext()
-      if (!ctx) {
-        return false
-      }
-      capabilityWarning.value = ''
-      return true
-    } catch (error) {
-      capabilityWarning.value = '浏览器阻止了音频初始化，请先点击页面后再试一次。'
-      console.warn('Audio priming failed:', error)
-      return false
-    }
-  }
+  let currentObjectUrl = null
 
   const dispatchLipSync = (mouthOpen = 0) => {
     window.dispatchEvent(
       new CustomEvent('digihuman-live2d-lipsync', {
-        detail: {
-          mouth_open: mouthOpen,
-        },
+        detail: { mouth_open: mouthOpen },
       })
     )
   }
@@ -70,6 +52,36 @@ export function useAudioPlayer() {
     }
   }
 
+  const revokeCurrentObjectUrl = () => {
+    if (!currentObjectUrl) {
+      return
+    }
+
+    try {
+      URL.revokeObjectURL(currentObjectUrl)
+    } catch (error) {
+      console.warn('Failed to revoke audio object URL:', error)
+    }
+
+    currentObjectUrl = null
+  }
+
+  const releaseCurrentAudio = () => {
+    if (!currentAudio.value) {
+      return
+    }
+
+    try {
+      currentAudio.value.pause()
+      currentAudio.value.removeAttribute('src')
+      currentAudio.value.load?.()
+    } catch (error) {
+      console.warn('Failed to release current audio element:', error)
+    }
+
+    currentAudio.value = null
+  }
+
   const ensureAudioContext = async () => {
     if (!audioContext) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext
@@ -85,6 +97,23 @@ export function useAudioPlayer() {
     }
 
     return audioContext
+  }
+
+  const primeAudio = async () => {
+    errorMessage.value = ''
+
+    try {
+      const ctx = await ensureAudioContext()
+      if (!ctx) {
+        return false
+      }
+      capabilityWarning.value = ''
+      return true
+    } catch (error) {
+      capabilityWarning.value = '浏览器阻止了音频初始化，请先点击页面后再试一次。'
+      console.warn('Audio priming failed:', error)
+      return false
+    }
   }
 
   const startLipSyncLoop = (audio) => {
@@ -144,7 +173,8 @@ export function useAudioPlayer() {
   }
 
   const base64ToBlob = (base64, mimeType) => {
-    const byteCharacters = atob(base64)
+    const normalized = String(base64 || '').trim()
+    const byteCharacters = atob(normalized)
     const byteNumbers = new Array(byteCharacters.length)
     for (let i = 0; i < byteCharacters.length; i += 1) {
       byteNumbers[i] = byteCharacters.charCodeAt(i)
@@ -173,6 +203,7 @@ export function useAudioPlayer() {
 
     audio.onended = () => {
       isPlaying.value = false
+      isLoading.value = false
       cleanupAudioGraph()
       cleanup?.()
     }
@@ -183,46 +214,46 @@ export function useAudioPlayer() {
       cleanupAudioGraph()
       errorMessage.value = '音频播放失败'
       console.error('Audio playback error:', error)
+      cleanup?.()
     }
   }
 
   const playBase64Audio = (base64Audio, audioFormat = 'audio/mpeg') => {
     return new Promise((resolve, reject) => {
       try {
-        if (currentAudio.value) {
-          currentAudio.value.pause()
-          currentAudio.value = null
-        }
+        releaseCurrentAudio()
         cleanupAudioGraph()
+        revokeCurrentObjectUrl()
 
         const audio = new Audio()
         currentAudio.value = audio
 
         const audioBlob = base64ToBlob(base64Audio, audioFormat)
         const audioUrl = URL.createObjectURL(audioBlob)
+        currentObjectUrl = audioUrl
         audio.src = audioUrl
         audio.preload = 'auto'
 
         bindAudioLifecycle(audio, () => {
-          URL.revokeObjectURL(audioUrl)
+          if (currentAudio.value === audio) {
+            currentAudio.value = null
+          }
+          if (currentObjectUrl === audioUrl) {
+            revokeCurrentObjectUrl()
+          }
           resolve()
         })
-
-        audio.onerror = (error) => {
-          isPlaying.value = false
-          isLoading.value = false
-          cleanupAudioGraph()
-          URL.revokeObjectURL(audioUrl)
-          errorMessage.value = '音频播放失败'
-          console.error('Audio playback error:', error)
-          reject(error)
-        }
 
         audio.play().catch((error) => {
           isPlaying.value = false
           isLoading.value = false
           cleanupAudioGraph()
-          URL.revokeObjectURL(audioUrl)
+          if (currentAudio.value === audio) {
+            currentAudio.value = null
+          }
+          if (currentObjectUrl === audioUrl) {
+            revokeCurrentObjectUrl()
+          }
           errorMessage.value = error.message || '播放失败'
           reject(error)
         })
@@ -236,32 +267,28 @@ export function useAudioPlayer() {
   const playAudioFromUrl = (audioUrl) => {
     return new Promise((resolve, reject) => {
       try {
-        if (currentAudio.value) {
-          currentAudio.value.pause()
-          currentAudio.value = null
-        }
+        releaseCurrentAudio()
         cleanupAudioGraph()
+        revokeCurrentObjectUrl()
 
         const audio = new Audio(audioUrl)
         currentAudio.value = audio
         audio.preload = 'auto'
 
         bindAudioLifecycle(audio, () => {
+          if (currentAudio.value === audio) {
+            currentAudio.value = null
+          }
           resolve()
         })
-
-        audio.onerror = (error) => {
-          isPlaying.value = false
-          isLoading.value = false
-          cleanupAudioGraph()
-          errorMessage.value = '音频播放失败'
-          reject(error)
-        }
 
         audio.play().catch((error) => {
           isPlaying.value = false
           isLoading.value = false
           cleanupAudioGraph()
+          if (currentAudio.value === audio) {
+            currentAudio.value = null
+          }
           errorMessage.value = error.message || '播放失败'
           reject(error)
         })
@@ -273,12 +300,9 @@ export function useAudioPlayer() {
   }
 
   const stopPlayback = () => {
-    if (currentAudio.value) {
-      currentAudio.value.pause()
-      currentAudio.value.currentTime = 0
-      currentAudio.value = null
-    }
+    releaseCurrentAudio()
     cleanupAudioGraph()
+    revokeCurrentObjectUrl()
     isPlaying.value = false
     isLoading.value = false
   }

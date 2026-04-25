@@ -5,6 +5,7 @@ Keeps the runtime message flow on a single unified conversation pipeline.
 import asyncio
 import base64
 import json
+import re
 import traceback
 import uuid
 from typing import Any, Dict, Optional
@@ -148,6 +149,54 @@ class WebSocketHandler:
             "details": details,
         }
 
+    def _split_completed_sentences(self, text: str):
+        sentences = []
+        buffer = (text or "").strip()
+
+        if not buffer:
+            return sentences, ""
+
+        strong_breaks = "。！？!?；;：:.\n"
+        start = 0
+
+        for index, char in enumerate(buffer):
+            should_split = char in strong_breaks
+
+            if not should_split:
+                continue
+
+            sentence = buffer[start:index + 1].strip()
+            if sentence:
+                sentences.append(sentence)
+            start = index + 1
+
+        return sentences, buffer[start:].strip()
+
+    def _merge_short_sentences(self, sentences):
+        merged = []
+        pending = ""
+        min_chars = 22
+
+        for sentence in sentences:
+            current = sentence.strip()
+            if not current:
+                continue
+
+            if not pending:
+                pending = current
+                continue
+
+            if len(pending) < min_chars:
+                pending = f"{pending}{current}"
+            else:
+                merged.append(pending)
+                pending = current
+
+        if pending:
+            merged.append(pending)
+
+        return merged
+
     async def _build_response_payload(
         self,
         client_uid: str,
@@ -221,6 +270,50 @@ class WebSocketHandler:
         except Exception as e:
             logger.warning(f"Failed to send audio follow-up for response {response_id}: {e}")
 
+    async def _stream_sentence_audio_worker(
+        self,
+        websocket: WebSocket,
+        response_id: str,
+        sentence_queue: "asyncio.Queue[Optional[Dict[str, Any]]]",
+        emotion_hint: Dict[str, Any],
+    ) -> None:
+        while True:
+            item = await sentence_queue.get()
+            if item is None:
+                sentence_queue.task_done()
+                break
+
+            index = item["index"]
+            sentence = item["text"]
+
+            try:
+                control_result = self.emotion_controller.build_controls(
+                    text=sentence,
+                    emotion=emotion_hint.get("emotion"),
+                    intensity=emotion_hint.get("intensity"),
+                    confidence=float(emotion_hint.get("confidence", 0.5) or 0.5),
+                    details=emotion_hint.get("details"),
+                )
+                audio_b64 = await self._synthesize_audio(
+                    control_result.enhanced_text,
+                    emotion_result=None,
+                    tts_params=control_result.tts_params,
+                )
+
+                await websocket.send_text(json.dumps({
+                    "type": "sentence-audio",
+                    "response_id": response_id,
+                    "index": index,
+                    "text": sentence,
+                    "audio": audio_b64,
+                    "audio_format": "audio/wav" if audio_b64 else None,
+                    "live2d_command": control_result.live2d_params,
+                }))
+            except Exception as e:
+                logger.warning(f"Failed to synthesize sentence audio {index} for {response_id}: {e}")
+            finally:
+                sentence_queue.task_done()
+
     async def _send_emotion_update(self, websocket: WebSocket, source: str, emotion_result, text: Optional[str] = None):
         payload: Dict[str, Any] = {
             "type": "emotion_update",
@@ -234,6 +327,19 @@ class WebSocketHandler:
             payload["text"] = text
         await websocket.send_text(json.dumps(payload))
 
+    async def _ensure_active_history(self, client_uid: str) -> Optional[str]:
+        context = self.client_contexts.get(client_uid)
+        if not context:
+            return None
+
+        if context.history_uid:
+            return context.history_uid
+
+        history_uid = self.history_manager.create_new_history(client_uid)
+        if history_uid:
+            context.history_uid = history_uid
+        return history_uid
+
     async def _process_conversation_turn(
         self,
         websocket: WebSocket,
@@ -242,7 +348,7 @@ class WebSocketHandler:
         store_user_text_in_response: bool = False,
     ) -> None:
         context = self.client_contexts.get(client_uid)
-        history_uid = context.history_uid if context else None
+        history_uid = await self._ensure_active_history(client_uid)
 
         user_emotion = await analyze_emotion(user_text, self.llm_service)
         logger.info(f"User emotion: {user_emotion.emotion} ({user_emotion.confidence})")
@@ -253,8 +359,32 @@ class WebSocketHandler:
             text=user_text if store_user_text_in_response else None,
         )
 
-        result = await self.dialogue_service.process_message(message=user_text, session_id=client_uid)
-        response_text = result.get("response", "Error: No response generated")
+        response_id = str(uuid.uuid4())
+        await websocket.send_text(json.dumps({
+            "type": "response-start",
+            "response_id": response_id,
+            "client_id": client_uid,
+            "user_text": user_text if store_user_text_in_response else None,
+        }))
+
+        response_parts = []
+        async for event in self.dialogue_service.process_message_stream(message=user_text, session_id=client_uid):
+            if event.get("type") != "chunk":
+                continue
+
+            chunk = event.get("content", "")
+            if not chunk:
+                continue
+
+            response_parts.append(chunk)
+            await websocket.send_text(json.dumps({
+                "type": "response-delta",
+                "response_id": response_id,
+                "delta": chunk,
+                "text": "".join(response_parts),
+            }))
+
+        response_text = "".join(response_parts).strip() or "Error: No response generated"
 
         assistant_emotion = await analyze_emotion(response_text, self.llm_service)
         logger.info(f"Assistant emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
@@ -270,6 +400,8 @@ class WebSocketHandler:
             assistant_emotion=assistant_emotion,
             user_text=user_text if store_user_text_in_response else None,
         )
+        response_data["response_id"] = response_id
+        response_data["streaming"] = True
 
         await websocket.send_text(json.dumps(response_data))
         await websocket.send_text(
@@ -283,16 +415,104 @@ class WebSocketHandler:
                 "live2d_command": response_data.get("live2d_command"),
             })
         )
+        await self._send_audio_followup(
+            websocket=websocket,
+            response_id=response_id,
+            text=response_data["text"]["enhanced"],
+            emotion_result=assistant_emotion,
+            tts_params=response_data.get("tts_params"),
+        )
+        return
 
-        asyncio.create_task(
-            self._send_audio_followup(
-                websocket=websocket,
-                response_id=response_data["response_id"],
-                text=response_data["text"]["enhanced"],
-                emotion_result=assistant_emotion,
-                tts_params=response_data.get("tts_params"),
+        sentence_queue: asyncio.Queue = asyncio.Queue()
+        sentence_worker = asyncio.create_task(
+            self._stream_sentence_audio_worker(
+                websocket,
+                response_id,
+                sentence_queue,
+                {
+                    "emotion": "neutral",
+                    "intensity": "low",
+                    "confidence": 0.5,
+                    "details": {"neutral": 0.5},
+                },
             )
         )
+
+        response_parts = []
+        sentence_buffer = ""
+        sentence_index = 0
+
+        async for event in self.dialogue_service.process_message_stream(message=user_text, session_id=client_uid):
+            if event.get("type") != "chunk":
+                continue
+
+            chunk = event.get("content", "")
+            if not chunk:
+                continue
+
+            response_parts.append(chunk)
+            sentence_buffer += chunk
+
+            await websocket.send_text(json.dumps({
+                "type": "response-delta",
+                "response_id": response_id,
+                "delta": chunk,
+                "text": "".join(response_parts),
+            }))
+
+            completed_sentences, sentence_buffer = self._split_completed_sentences(sentence_buffer)
+            for sentence in self._merge_short_sentences(completed_sentences):
+                logger.info(f"Queueing sentence-audio chunk {sentence_index} for {response_id}: {sentence}")
+                await sentence_queue.put({
+                    "index": sentence_index,
+                    "text": sentence,
+                })
+                sentence_index += 1
+
+        if sentence_buffer.strip():
+            trailing_sentences = self._merge_short_sentences([sentence_buffer.strip()])
+            trailing_text = trailing_sentences[0] if trailing_sentences else sentence_buffer.strip()
+            logger.info(f"Queueing trailing sentence-audio chunk {sentence_index} for {response_id}: {trailing_text}")
+            await sentence_queue.put({
+                "index": sentence_index,
+                "text": trailing_text,
+            })
+
+        await sentence_queue.put(None)
+
+        response_text = "".join(response_parts).strip() or "Error: No response generated"
+
+        assistant_emotion = await analyze_emotion(response_text, self.llm_service)
+        logger.info(f"Assistant emotion: {assistant_emotion.emotion} ({assistant_emotion.confidence})")
+
+        if history_uid:
+            self.history_manager.store_message(client_uid, history_uid, "human", user_text)
+            self.history_manager.store_message(client_uid, history_uid, "ai", response_text)
+
+        response_data = await self._build_response_payload(
+            client_uid=client_uid,
+            response_text=response_text,
+            user_emotion=user_emotion,
+            assistant_emotion=assistant_emotion,
+            user_text=user_text if store_user_text_in_response else None,
+        )
+        response_data["response_id"] = response_id
+        response_data["streaming"] = True
+
+        await websocket.send_text(json.dumps(response_data))
+        await websocket.send_text(
+            json.dumps({
+                "type": "emotion_update",
+                "source": "assistant",
+                "emotion": assistant_emotion.emotion,
+                "confidence": assistant_emotion.confidence,
+                "intensity": assistant_emotion.intensity,
+                "details": assistant_emotion.details,
+                "live2d_command": response_data.get("live2d_command"),
+            })
+        )
+        await sentence_worker
 
     def _decode_audio_payload(self, audio_data: Any) -> bytes:
         if isinstance(audio_data, list):
@@ -320,15 +540,19 @@ class WebSocketHandler:
         logger.info(f"Starting ASR transcription for client {client_uid}")
         text = await self.asr_service.async_transcribe(audio_bytes)
         logger.info(f"ASR transcription result for client {client_uid}: '{text}'")
+        text_str = str(text or "").strip()
+        if "ASR_VOSK_MODEL_PATH" in text_str or "Vosk" in text_str:
+            await websocket.send_text(json.dumps({"type": "error", "message": "语音识别失败，请检查本地 Vosk 模型配置"}))
+            return None
 
         if text is None or text == "None" or not text or text == "[语音识别失败]":
             await websocket.send_text(json.dumps({"type": "error", "message": "语音识别失败，请重试"}))
             return None
 
-        return text
+        return text_str
 
-    async def handle_new_connection(self, websocket: WebSocket):
-        client_uid = str(uuid.uuid4())
+    async def handle_new_connection(self, websocket: WebSocket, requested_client_uid: Optional[str] = None):
+        client_uid = (requested_client_uid or "").strip() or str(uuid.uuid4())
         self.client_connections[client_uid] = websocket
         logger.info(f"New WebSocket connection established: {client_uid}")
 

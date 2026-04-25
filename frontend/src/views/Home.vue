@@ -140,12 +140,9 @@ import {
   Connection,
   DataLine,
   MagicStick,
-  Microphone,
-  Monitor,
   Opportunity,
   Service,
   Setting,
-  VideoPlay,
 } from '@element-plus/icons-vue'
 import { computed, onMounted } from 'vue'
 import { useHealthDetail } from '../composables/useHealthDetail'
@@ -163,15 +160,8 @@ const featureCards = [
     to: '/chat',
     kicker: 'Conversation',
     title: '对话控制台',
-    description: '查看文本回复、情绪标签、TTS 参数和 Live2D 指令在一轮对话里如何联动。',
+    description: '统一处理文本对话、语音输入、情绪驱动、TTS 参数和 Live2D 联动，不再拆成多个弱页面。',
     icon: ChatLineRound,
-  },
-  {
-    to: '/live2d-view',
-    kicker: 'Avatar Stage',
-    title: 'Live2D 舞台',
-    description: '验证表情、动作、状态机和嘴型同步，让数字人表现不再停留在静态切换。',
-    icon: VideoPlay,
   },
   {
     to: '/dashboard',

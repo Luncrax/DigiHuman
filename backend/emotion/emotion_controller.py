@@ -5,6 +5,7 @@ Turns analyzed emotion into executable text, TTS, and Live2D controls.
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
+from backend.character_config import get_character_config
 from backend.core.config import config
 from backend.emotion.langchain_emotion_analyzer import EmotionAnalysisResult
 from backend.live2d.emotion_mapper import get_emotion_mapper
@@ -179,28 +180,40 @@ class EmotionController:
         return stripped
 
     def _build_tts_instruct(self, emotion: str, intensity: str) -> Optional[str]:
-        return self.EMOTION_INSTRUCT.get(emotion, self.EMOTION_INSTRUCT["neutral"]).get(intensity)
+        if not config.QWEN3_TTS_ENABLE_STYLE:
+            return None
+        base_instruct = self.EMOTION_INSTRUCT.get(emotion, self.EMOTION_INSTRUCT["neutral"]).get(intensity)
+        emotion_style = get_character_config().emotion_style.strip()
+        if emotion_style and base_instruct:
+            return f"{base_instruct} Overall expression style: {emotion_style}"
+        if emotion_style:
+            return emotion_style
+        return base_instruct
 
     def _build_tts_params(self, emotion: str, intensity: str, instruct: Optional[str]) -> Dict[str, Any]:
         mode = self._select_qwen_mode(emotion, intensity)
         prompt_path = self._select_voice_prompt(mode)
         sampling = self._build_sampling_params(mode, intensity)
+        tts_emotion = emotion if config.QWEN3_TTS_ENABLE_STYLE else "neutral"
+        tts_intensity = intensity if config.QWEN3_TTS_ENABLE_STYLE else "low"
+        tts_instruct = instruct if config.QWEN3_TTS_ENABLE_STYLE else None
 
         params: Dict[str, Any] = {
             "voice": config.TTS_VOICE,
             "model": config.TTS_MODEL,
-            "emotion": emotion,
-            "intensity": intensity,
+            "emotion": tts_emotion,
+            "intensity": tts_intensity,
             "language": config.QWEN3_TTS_LANGUAGE,
             "voice_prompt_path": prompt_path,
-            "instruct": instruct,
+            "instruct": tts_instruct,
             "speaker": config.QWEN3_TTS_CUSTOM_SPEAKER or config.TTS_VOICE,
             "strategy": {
                 "mode": mode,
                 "speaker": config.QWEN3_TTS_CUSTOM_SPEAKER or config.TTS_VOICE,
                 "prompt_path": prompt_path,
-                "emotion": emotion,
-                "intensity": intensity,
+                "emotion": tts_emotion,
+                "intensity": tts_intensity,
+                "style_enabled": bool(config.QWEN3_TTS_ENABLE_STYLE),
             },
         }
         params.update(sampling)
@@ -218,10 +231,15 @@ class EmotionController:
 
     def _select_qwen_mode(self, emotion: str, intensity: str) -> str:
         configured = (config.TTS_MODEL or "custom_voice").strip().lower()
+        if configured in {"prompt_clone", "voice_clone"}:
+            configured = "base"
+
         allowed = {"base", "custom_voice", "voice_design"}
 
         if configured in allowed:
-            if configured == "base" and not config.QWEN3_TTS_PROMPT_PATH:
+            if configured == "base":
+                if config.QWEN3_TTS_PROMPT_PATH:
+                    return "base"
                 return "custom_voice"
             return configured
 

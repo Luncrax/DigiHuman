@@ -5,6 +5,8 @@ Based on open-llm-vtuber's server.py
 import os
 import shutil
 import json
+import time
+import base64
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -12,12 +14,29 @@ from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+from pydantic import BaseModel
 
 from backend.ws_handler import WebSocketHandler
+from backend.character_config import CharacterConfig, get_character_config_store
 from backend.core.config import config
 from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+class TTSTestRequest(BaseModel):
+    text: str
+    mode: str = "custom_voice"
+    voice: str | None = None
+    emotion: str = "neutral"
+    intensity: str = "low"
+    instruct: str | None = None
+    voice_prompt_path: str | None = None
+
+
+class CharacterConfigRequest(BaseModel):
+    llm_system_prompt: str = ""
+    emotion_style: str = ""
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -88,7 +107,11 @@ class DigiHumanWebSocketServer:
                 await websocket.accept()
                 logger.info("WebSocket connection accepted")
                 # 调用 WebSocket 处理器
-                await self.ws_handler.handle_new_connection(websocket)
+                requested_client_uid = websocket.query_params.get("client_id")
+                await self.ws_handler.handle_new_connection(
+                    websocket,
+                    requested_client_uid=requested_client_uid,
+                )
                 logger.info("WebSocket connection established successfully")
                 await self.ws_handler.handle_messages(websocket)
             except Exception as e:
@@ -108,6 +131,100 @@ class DigiHumanWebSocketServer:
         @self.app.get("/health/detail")
         async def health_detail():
             return await self.get_health_detail()
+
+        @self.app.post("/api/tts/test")
+        async def tts_test(payload: TTSTestRequest):
+            if not config.TTS_ENABLED or not self.ws_handler.tts_service:
+                return {
+                    "status": "error",
+                    "message": "TTS service is not enabled.",
+                }
+
+            text = (payload.text or "").strip()
+            if not text:
+                return {
+                    "status": "error",
+                    "message": "Text is required.",
+                }
+
+            started_at = time.perf_counter()
+            try:
+                audio_bytes = await self.ws_handler.tts_service.async_synthesize(
+                    text,
+                    voice=payload.voice or config.TTS_VOICE,
+                    model=payload.mode,
+                    emotion=payload.emotion,
+                    intensity=payload.intensity,
+                    instruct=payload.instruct,
+                    voice_prompt_path=payload.voice_prompt_path or None,
+                )
+                elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+
+                return {
+                    "status": "ok",
+                    "mode": payload.mode,
+                    "voice": payload.voice or config.TTS_VOICE,
+                    "emotion": payload.emotion,
+                    "intensity": payload.intensity,
+                    "voice_prompt_path": payload.voice_prompt_path or None,
+                    "elapsed_ms": elapsed_ms,
+                    "audio_base64": base64.b64encode(audio_bytes).decode("utf-8"),
+                    "audio_format": "audio/wav",
+                    "audio_size": len(audio_bytes),
+                }
+            except Exception as exc:
+                return {
+                    "status": "error",
+                    "message": str(exc),
+                    "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                    "mode": payload.mode,
+                    "voice_prompt_path": payload.voice_prompt_path or None,
+                }
+
+        @self.app.get("/api/character-config")
+        async def get_character_config_api():
+            return {
+                "status": "ok",
+                "config": get_character_config_store().to_dict(),
+            }
+
+        @self.app.post("/api/character-config")
+        async def save_character_config_api(payload: CharacterConfigRequest):
+            saved = get_character_config_store().save(
+                CharacterConfig(
+                    llm_system_prompt=(payload.llm_system_prompt or "").strip(),
+                    emotion_style=(payload.emotion_style or "").strip(),
+                )
+            )
+            return {
+                "status": "ok",
+                "config": {
+                    "llm_system_prompt": saved.llm_system_prompt,
+                    "emotion_style": saved.emotion_style,
+                },
+            }
+
+        @self.app.get("/api/session-overview")
+        async def session_overview(client_id: str = "", current_history_uid: str = ""):
+            safe_client_id = (client_id or "").strip()
+            safe_history_uid = (current_history_uid or "").strip()
+
+            histories = self.ws_handler.history_manager.get_history_list(safe_client_id) if safe_client_id else []
+            current_history = (
+                self.ws_handler.history_manager.get_history(safe_client_id, safe_history_uid)
+                if safe_client_id and safe_history_uid
+                else []
+            )
+
+            return {
+                "status": "ok",
+                "client_id": safe_client_id,
+                "current_history_uid": safe_history_uid,
+                "history_count": len(histories),
+                "current_history_message_count": len(current_history),
+                "histories": histories,
+                "current_history": current_history,
+            }
 
         # Mount cache directory (to ensure audio file access)
         if not os.path.exists("cache"):

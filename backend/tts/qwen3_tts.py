@@ -19,6 +19,8 @@ class Qwen3TTS(TTSInterface):
     MODEL_ALIASES = {
         "base": "base",
         "qwen_base": "base",
+        "prompt_clone": "base",
+        "voice_clone": "base",
         "custom": "custom_voice",
         "custom_voice": "custom_voice",
         "voice": "custom_voice",
@@ -44,6 +46,8 @@ class Qwen3TTS(TTSInterface):
 
     def _resolve_mode_and_path(self, model: Optional[str]) -> Tuple[str, str]:
         normalized = self.MODEL_ALIASES.get((model or config.TTS_MODEL or "base").strip().lower(), "base")
+        if normalized == "base" and config.QWEN3_TTS_PROMPT_PATH:
+            return "base", config.QWEN3_TTS_BASE_MODEL_PATH
         if normalized == "custom_voice":
             return normalized, config.QWEN3_TTS_CUSTOM_MODEL_PATH
         if normalized == "voice_design":

@@ -1,6 +1,21 @@
 <template>
-  <div class="live2d-wrapper" :class="{ hidden: !showCharacter }">
+  <div
+    class="live2d-wrapper"
+    :class="{ hidden: !showCharacter, dragging: dragState.isDragging }"
+    :style="wrapperStyle"
+  >
     <div ref="canvasRef" class="live2d-canvas"></div>
+
+    <div
+      class="drag-handle"
+      title="拖动 Live2D"
+      @pointerdown="startDrag"
+    >
+      <span class="drag-dot"></span>
+      <span class="drag-dot"></span>
+      <span class="drag-dot"></span>
+      <span class="drag-label">拖动舞台</span>
+    </div>
 
     <div
       v-if="currentEmotion"
@@ -33,7 +48,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { View, Hide, Microphone, VideoPlay, Refresh } from '@element-plus/icons-vue'
 import { createPixiLive2d } from '@/lib/live2d/pixiLive2d'
 
@@ -51,6 +66,14 @@ let reactTimer = null
 let talkFallbackTimer = null
 let tweenFrame = null
 let lipSyncValue = 0
+const DEFAULT_POSITION = { x: 0, y: 48 }
+const dragState = ref({
+  isDragging: false,
+  startX: 0,
+  startY: 0,
+  offsetX: DEFAULT_POSITION.x,
+  offsetY: DEFAULT_POSITION.y,
+})
 let parameterState = {
   angle_x: 0,
   angle_y: 0,
@@ -62,6 +85,12 @@ let parameterState = {
   mouth_open: 0,
   breath: 0.4,
 }
+
+const wrapperStyle = computed(() => ({
+  left: `${dragState.value.offsetX}px`,
+  bottom: 'auto',
+  top: `${dragState.value.offsetY}px`,
+}))
 
 const STATE_PRIORITY = {
   idle: 0,
@@ -116,6 +145,68 @@ const clearTimer = (timer) => {
     window.clearTimeout(timer)
   }
   return null
+}
+
+const persistDragPosition = () => {
+  localStorage.setItem(
+    'digihuman_live2d_position',
+    JSON.stringify({
+      x: dragState.value.offsetX,
+      y: dragState.value.offsetY,
+    })
+  )
+}
+
+const clampDragPosition = (x, y) => {
+  const canvasWidth = canvasRef.value?.clientWidth || 560
+  const canvasHeight = canvasRef.value?.clientHeight || 760
+  const maxX = Math.max(0, window.innerWidth - canvasWidth + 80)
+  const maxY = Math.max(0, window.innerHeight - canvasHeight + 120)
+
+  return {
+    x: Math.min(Math.max(x, -160), maxX),
+    y: Math.min(Math.max(y, 24), maxY),
+  }
+}
+
+const handleDragMove = (event) => {
+  if (!dragState.value.isDragging) {
+    return
+  }
+
+  const nextPosition = clampDragPosition(
+    event.clientX - dragState.value.startX,
+    event.clientY - dragState.value.startY
+  )
+
+  dragState.value = {
+    ...dragState.value,
+    offsetX: nextPosition.x,
+    offsetY: nextPosition.y,
+  }
+}
+
+const stopDrag = () => {
+  if (!dragState.value.isDragging) {
+    return
+  }
+
+  dragState.value = {
+    ...dragState.value,
+    isDragging: false,
+  }
+  persistDragPosition()
+}
+
+const startDrag = (event) => {
+  event.preventDefault()
+
+  dragState.value = {
+    ...dragState.value,
+    isDragging: true,
+    startX: event.clientX - dragState.value.offsetX,
+    startY: event.clientY - dragState.value.offsetY,
+  }
 }
 
 const mergeParameters = (...parameterSets) => {
@@ -329,7 +420,7 @@ const initLive2D = async () => {
   try {
     live2dRuntime = await createPixiLive2d(canvasRef.value, {
       modelPath: '/live2d_models/Mao/Mao.model3.json',
-      scaleMultiplier: 0.36,
+      scaleMultiplier: 0.74,
     })
 
     currentProfile = deriveProfile({
@@ -528,11 +619,31 @@ const handleLipSyncEvent = (event) => {
 }
 
 onMounted(async () => {
+  const savedPosition = localStorage.getItem('digihuman_live2d_position')
+  if (savedPosition) {
+    try {
+      const parsed = JSON.parse(savedPosition)
+      const nextPosition = clampDragPosition(
+        Number(parsed.x ?? DEFAULT_POSITION.x),
+        Number(parsed.y ?? DEFAULT_POSITION.y)
+      )
+      dragState.value = {
+        ...dragState.value,
+        offsetX: nextPosition.x,
+        offsetY: nextPosition.y,
+      }
+    } catch (error) {
+      console.warn('Failed to restore Live2D position:', error)
+    }
+  }
+
   await initLive2D()
   window.addEventListener('digihuman-live2d-command', handleCommandEvent)
   window.addEventListener('digihuman-live2d-talk-start', handleTalkStartEvent)
   window.addEventListener('digihuman-live2d-talk-end', handleTalkEndEvent)
   window.addEventListener('digihuman-live2d-lipsync', handleLipSyncEvent)
+  window.addEventListener('pointermove', handleDragMove)
+  window.addEventListener('pointerup', stopDrag)
 })
 
 onUnmounted(() => {
@@ -540,6 +651,8 @@ onUnmounted(() => {
   window.removeEventListener('digihuman-live2d-talk-start', handleTalkStartEvent)
   window.removeEventListener('digihuman-live2d-talk-end', handleTalkEndEvent)
   window.removeEventListener('digihuman-live2d-lipsync', handleLipSyncEvent)
+  window.removeEventListener('pointermove', handleDragMove)
+  window.removeEventListener('pointerup', stopDrag)
   destroyLive2D()
 })
 
@@ -554,10 +667,15 @@ defineExpose({
 <style scoped>
 .live2d-wrapper {
   position: fixed;
-  bottom: 92px;
-  left: 24px;
+  left: 0;
+  top: 48px;
   z-index: 1000;
   transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.live2d-wrapper.dragging {
+  transition: none;
 }
 
 .live2d-wrapper.hidden {
@@ -567,21 +685,58 @@ defineExpose({
 }
 
 .live2d-canvas {
-  width: min(34vw, 560px);
-  height: min(60vh, 760px);
-  min-width: 360px;
-  min-height: 520px;
-  border-radius: 22px;
+  width: min(44vw, 680px);
+  height: min(76vh, 980px);
+  min-width: 460px;
+  min-height: 620px;
+  border-radius: 18px;
   overflow: hidden;
+  pointer-events: none;
+}
+
+.drag-handle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 248, 234, 0.94);
+  border: 1px solid rgba(37, 23, 13, 0.12);
+  box-shadow: 0 8px 18px rgba(37, 23, 13, 0.1);
+  color: #25170d;
+  cursor: grab;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(37, 23, 13, 0.62);
+}
+
+.drag-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .live2d-controls {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 12px;
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-direction: column;
+  pointer-events: auto;
 }
 
 .control-btn {
@@ -601,49 +756,53 @@ defineExpose({
 
 .emotion-indicator {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 54px;
+  left: 12px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 5px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
   animation: emotionPulse 0.5s ease;
 }
 
 @media (max-width: 960px) {
   .live2d-wrapper {
-    left: 12px;
-    bottom: 112px;
+    top: 72px;
   }
 
   .live2d-canvas {
-    width: min(42vw, 420px);
-    height: min(54vh, 620px);
-    min-width: 280px;
-    min-height: 420px;
+    width: min(64vw, 520px);
+    height: min(66vh, 760px);
+    min-width: 320px;
+    min-height: 480px;
+  }
+
+  .drag-handle {
+    top: 12px;
+    left: 12px;
   }
 }
 
 .emotion-icon {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .emotion-text {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   color: #333;
 }
 
 .state-badge {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.62);

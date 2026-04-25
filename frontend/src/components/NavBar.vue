@@ -47,7 +47,6 @@ import {
   Setting,
   Sunny,
   VideoPlay,
-  Microphone,
   User,
   Collection,
 } from '@element-plus/icons-vue'
@@ -60,8 +59,6 @@ const { isDark, toggleTheme } = useTheme()
 const navItems = [
   { path: '/', label: '总览', icon: HomeFilled },
   { path: '/chat', label: '对话控制台', icon: ChatLineRound },
-  { path: '/live2d-view', label: 'Live2D 舞台', icon: VideoPlay },
-  { path: '/voice', label: '语音输入', icon: Microphone },
   { path: '/dashboard', label: '运行看板', icon: DataLine },
   { path: '/memory', label: '记忆视图', icon: Collection },
   { path: '/character', label: '角色配置', icon: User },

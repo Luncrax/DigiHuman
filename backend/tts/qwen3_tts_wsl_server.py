@@ -74,10 +74,29 @@ def _model_cache_key(model_path: str, device: str, dtype: str, flash_attn: bool)
     return f"{model_path}|{device}|{dtype}|{flash_attn}"
 
 
+def _clear_model_cache():
+    if not MODEL_CACHE:
+        return
+
+    for key, model in list(MODEL_CACHE.items()):
+        try:
+            del model
+        except Exception:
+            pass
+        MODEL_CACHE.pop(key, None)
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _get_model(req: SynthesizeRequest):
     cache_key = _model_cache_key(req.model_path, req.device, req.dtype, req.flash_attn)
     if cache_key in MODEL_CACHE:
         return MODEL_CACHE[cache_key]
+
+    if MODEL_CACHE and cache_key not in MODEL_CACHE:
+        LOGGER.info("Switching Qwen3-TTS model, clearing previous cache first")
+        _clear_model_cache()
 
     Qwen3TTSModel, _ = _load_qwen_modules(req.source_path)
     model = Qwen3TTSModel.from_pretrained(
@@ -156,7 +175,7 @@ def health():
 
 @app.post("/synthesize")
 def synthesize(req: SynthesizeRequest):
-    try:
+    def _run_once():
         model = _get_model(req)
         kwargs = _gen_kwargs(req)
 
@@ -196,7 +215,17 @@ def synthesize(req: SynthesizeRequest):
             "mode": req.mode,
             "model_type": getattr(model.model, "tts_model_type", "unknown"),
         }
+
+    try:
+        return _run_once()
     except Exception as exc:
+        if "out of memory" in str(exc).lower():
+            LOGGER.warning("CUDA OOM detected, clearing model cache and retrying once")
+            _clear_model_cache()
+            try:
+                return _run_once()
+            except Exception:
+                LOGGER.exception("Retry after CUDA OOM also failed")
         LOGGER.exception("Failed to synthesize audio")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

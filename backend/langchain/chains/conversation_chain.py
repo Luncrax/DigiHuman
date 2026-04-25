@@ -7,6 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableSequence
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from backend.character_config import get_character_config
 from backend.utils.logger import get_logger
 from backend.core.config import config
 from ..models.custom_llm import get_custom_llm
@@ -58,8 +59,11 @@ class ConversationChain:
         """
         logger.info(f"Running conversation chain with input: {input_text}")
 
+        character_config = get_character_config()
+        runtime_system_prompt = character_config.llm_system_prompt.strip() or self.system_prompt
+
         # Prepare messages
-        messages = [SystemMessage(content=self.system_prompt)]
+        messages = [SystemMessage(content=runtime_system_prompt)]
 
         # Add history messages
         if history:

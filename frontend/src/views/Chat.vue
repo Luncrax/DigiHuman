@@ -81,6 +81,23 @@
         {{ systemNotice }}
       </div>
 
+      <div class="mt-4 rounded-[24px] border border-[var(--line)] bg-white/35 px-4 py-4 text-sm text-[var(--muted)]">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <div class="feature-kicker">Current Character Config</div>
+          <router-link to="/character" class="text-xs font-bold text-[var(--accent)] no-underline">前往角色配置</router-link>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-2">
+          <div>
+            <div class="mb-1 font-semibold text-[var(--text)]">当前生效的 LLM system prompt</div>
+            <div class="line-clamp-3">{{ currentCharacterConfig.llm_system_prompt || '未配置，当前使用默认 prompt。' }}</div>
+          </div>
+          <div>
+            <div class="mb-1 font-semibold text-[var(--text)]">当前生效的情绪表达风格</div>
+            <div class="line-clamp-3">{{ currentCharacterConfig.emotion_style || '未配置，当前使用默认情绪表达风格。' }}</div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="runtimeWarnings.length" class="mt-4 space-y-2">
         <div
           v-for="warning in runtimeWarnings"
@@ -219,6 +236,10 @@ const currentParams = ref({
   tts: null,
   live2d: null,
 })
+const currentCharacterConfig = ref({
+  llm_system_prompt: '',
+  emotion_style: '',
+})
 const currentEmotion = ref({
   user: { emotion: 'neutral', confidence: 0.5, intensity: 'medium' },
   assistant: { emotion: 'neutral', confidence: 0.5, intensity: 'medium' },
@@ -231,6 +252,8 @@ const isRecording = ref(false)
 let ws = null
 let reconnectTimer = null
 let typingTimer = null
+let sentenceAudioQueue = []
+let sentenceAudioProcessing = false
 
 const {
   audioLevel,
@@ -274,6 +297,12 @@ const currentReplyState = computed(() => {
   if (message.status === 'speaking') return '音频已就绪，正在说话'
   return '本轮回复完成'
 })
+
+const normalizeRuntimeWarnings = (warnings = []) => {
+  return (Array.isArray(warnings) ? warnings : []).filter(
+    (warning) => warning?.code !== 'live2d_backend_disabled'
+  )
+}
 
 const emotionLabel = (emotion) => {
   const labels = {
@@ -353,6 +382,31 @@ const formatTime = (timestamp) => {
   })
 }
 
+const parseJsonResponse = async (response, fallbackMessage) => {
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const text = await response.text()
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      throw new Error('后端接口未生效，当前返回的是 HTML。请重启后端服务。')
+    }
+    throw new Error(fallbackMessage)
+  }
+  return response.json()
+}
+
+const loadCharacterConfigSummary = async () => {
+  try {
+    const response = await fetch('/api/character-config')
+    const data = await parseJsonResponse(response, '角色配置摘要接口返回格式错误')
+    currentCharacterConfig.value = {
+      llm_system_prompt: data.config?.llm_system_prompt || '',
+      emotion_style: data.config?.emotion_style || '',
+    }
+  } catch (error) {
+    console.warn('Failed to load character config summary:', error)
+  }
+}
+
 const ensurePendingAssistant = () => {
   const lastMessage = messages.value[messages.value.length - 1]
   if (lastMessage?.role === 'assistant' && ['thinking', 'typing', 'speaking'].includes(lastMessage.status)) {
@@ -368,6 +422,16 @@ const ensurePendingAssistant = () => {
     emotion: 'neutral',
   }
   messages.value.push(message)
+  return message
+}
+
+const ensurePendingAssistantForResponse = (responseId) => {
+  const existing = messages.value.find((item) => item.responseId === responseId)
+  if (existing) {
+    return existing
+  }
+  const message = ensurePendingAssistant()
+  message.responseId = responseId
   return message
 }
 
@@ -400,8 +464,49 @@ const animateAssistantText = (message, text) => {
   }, 22)
 }
 
+const processSentenceAudioQueue = async () => {
+  if (sentenceAudioProcessing) {
+    return
+  }
+
+  sentenceAudioProcessing = true
+
+  while (sentenceAudioQueue.length) {
+    const item = sentenceAudioQueue.shift()
+    if (!item?.audio) {
+      continue
+    }
+
+    const message = messages.value.find((entry) => entry.responseId === item.response_id)
+    if (message) {
+      message.status = 'speaking'
+    }
+
+    const talkCommand = currentParams.value.live2d || item.live2d_command || {}
+    dispatchLive2DTalkEvent('digihuman-live2d-talk-start', talkCommand)
+
+    try {
+      await playBase64Audio(item.audio, item.audio_format || 'audio/wav')
+    } catch (error) {
+      runtimeWarnings.value = [{
+        code: 'tts_playback_failed',
+        message: playerError.value || '语音播放失败，已保留文本回复。',
+      }]
+      console.error('Sentence audio playback failed:', error)
+    } finally {
+      dispatchLive2DTalkEvent('digihuman-live2d-talk-end', talkCommand)
+      if (message && message.status === 'speaking') {
+        message.status = 'ready'
+      }
+      saveSession()
+    }
+  }
+
+  sentenceAudioProcessing = false
+}
+
 const handleResponseAudio = async (data) => {
-  runtimeWarnings.value = Array.isArray(data.warnings) ? data.warnings.slice(0, 3) : runtimeWarnings.value
+  runtimeWarnings.value = normalizeRuntimeWarnings(data.warnings).slice(0, 3) || runtimeWarnings.value
 
   if (!data.audio) {
     return
@@ -431,8 +536,37 @@ const handleResponseAudio = async (data) => {
   }
 }
 
+const handleResponseStart = async (data) => {
+  if (data.user_text) {
+    const lastMessage = messages.value[messages.value.length - 1]
+    if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== data.user_text) {
+      messages.value.push({
+        id: makeId('user'),
+        role: 'user',
+        content: data.user_text,
+        status: 'ready',
+      })
+    }
+  }
+
+  const assistantMessage = ensurePendingAssistantForResponse(data.response_id)
+  assistantMessage.status = 'thinking'
+  assistantMessage.content = ''
+  activeResponseId.value = data.response_id
+  await scrollToBottom()
+}
+
+const handleResponseDelta = async (data) => {
+  const assistantMessage = ensurePendingAssistantForResponse(data.response_id)
+  assistantMessage.status = 'typing'
+  assistantMessage.content = data.text || `${assistantMessage.content || ''}${data.delta || ''}`
+  activeResponseId.value = data.response_id
+  saveSession()
+  await scrollToBottom()
+}
+
 const handleFullResponse = async (data) => {
-  runtimeWarnings.value = Array.isArray(data.warnings) ? data.warnings.slice(0, 3) : []
+  runtimeWarnings.value = normalizeRuntimeWarnings(data.warnings).slice(0, 3)
 
   if (data.user_text) {
     const lastMessage = messages.value[messages.value.length - 1]
@@ -458,8 +592,7 @@ const handleFullResponse = async (data) => {
   currentTtsInstruct.value = data.tts_instruct || ''
 
   const content = data.text?.enhanced || data.text?.original || data.text || ''
-  const assistantMessage = ensurePendingAssistant()
-  assistantMessage.responseId = data.response_id
+  const assistantMessage = ensurePendingAssistantForResponse(data.response_id)
   assistantMessage.emotion = data.emotion?.assistant?.emotion || 'neutral'
   assistantMessage.params = {
     tts: data.tts_params,
@@ -468,7 +601,14 @@ const handleFullResponse = async (data) => {
   activeResponseId.value = data.response_id
 
   dispatchLive2DCommand(data.live2d_command)
-  animateAssistantText(assistantMessage, content)
+  if (data.streaming) {
+    assistantMessage.content = content
+    if (assistantMessage.status !== 'speaking') {
+      assistantMessage.status = 'ready'
+    }
+  } else {
+    animateAssistantText(assistantMessage, content)
+  }
   saveSession()
   await scrollToBottom()
 
@@ -497,8 +637,19 @@ const handleWebSocketMessage = async (data) => {
       await handleFullResponse(data)
       break
 
+    case 'response-start':
+      await handleResponseStart(data)
+      break
+
+    case 'response-delta':
+      await handleResponseDelta(data)
+      break
+
     case 'response-audio':
       await handleResponseAudio(data)
+      break
+
+    case 'sentence-audio':
       break
 
     case 'emotion_update':
@@ -514,12 +665,22 @@ const handleWebSocketMessage = async (data) => {
           confidence: data.confidence,
           intensity: data.intensity,
         }
+        if (data.live2d_command) {
+          currentParams.value.live2d = data.live2d_command
+          dispatchLive2DCommand(data.live2d_command)
+        }
       }
       break
 
     case 'history-list':
-      historyList.value = data.histories || []
-      break
+        historyList.value = data.histories || []
+        if (currentHistoryUid.value && historyList.value.some((item) => item.uid === currentHistoryUid.value)) {
+          ws?.send(JSON.stringify({
+            type: 'fetch-and-set-history',
+            history_uid: currentHistoryUid.value,
+          }))
+        }
+        break
 
     case 'history-data':
       messages.value = (data.messages || []).map((msg) => ({
@@ -562,7 +723,8 @@ const handleWebSocketMessage = async (data) => {
 
 const connectWebSocket = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/ws`
+  const query = clientId.value ? `?client_id=${encodeURIComponent(clientId.value)}` : ''
+  const wsUrl = `${protocol}//${window.location.host}/ws${query}`
   ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
@@ -688,6 +850,7 @@ const toggleVoiceRecording = async () => {
 
 onMounted(async () => {
   restoreSession()
+  await loadCharacterConfigSummary()
   connectWebSocket()
   await scrollToBottom()
 })
@@ -701,6 +864,8 @@ onUnmounted(() => {
     clearTimeout(reconnectTimer)
   }
   stopPlayback()
+  sentenceAudioQueue = []
+  sentenceAudioProcessing = false
   if (ws) {
     ws.close()
   }

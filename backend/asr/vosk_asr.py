@@ -25,7 +25,10 @@ class VoskASR(ASRInterface):
         self.available = False
         self.model = None
         self.recognizer = None
+        self.json = None
+        self._initialize()
 
+    def _initialize(self):
         try:
             from vosk import KaldiRecognizer, Model
             import json
@@ -45,6 +48,23 @@ class VoskASR(ASRInterface):
                 Path.cwd() / "models" / "vosk-model-small-cn-0.22",
             ]
 
+            discovered_paths = []
+            for search_root in (project_root, Path.cwd()):
+                if not search_root.exists():
+                    continue
+                try:
+                    discovered_paths.extend(
+                        path for path in search_root.rglob("vosk-model*") if path.is_dir()
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to scan Vosk model directories under %s: %s", search_root, exc)
+
+            seen = set()
+            model_paths = [
+                path for path in [*model_paths, *discovered_paths]
+                if not (str(path) in seen or seen.add(str(path)))
+            ]
+
             for path in model_paths:
                 try:
                     if not path.exists():
@@ -61,10 +81,22 @@ class VoskASR(ASRInterface):
                 self.recognizer.SetWords(True)
                 self.available = True
             else:
-                logger.warning("Vosk model not found, ASR will fall back to an error prompt")
+                logger.warning("Vosk model not found, ASR will fall back to a configuration hint")
 
         except ImportError as exc:
             logger.error("Vosk not installed: %s", exc)
+            self.available = False
+
+    def _ensure_available(self) -> bool:
+        if self.available and self.recognizer:
+            return True
+
+        logger.info("Vosk recognizer unavailable, retrying initialization")
+        self.available = False
+        self.model = None
+        self.recognizer = None
+        self._initialize()
+        return self.available and self.recognizer is not None
 
     def _convert_audio_to_wav(self, audio_input: Union[str, bytes, np.ndarray]) -> bytes:
         if isinstance(audio_input, str):
@@ -101,7 +133,7 @@ class VoskASR(ASRInterface):
         try:
             wav_bytes = self._convert_audio_to_wav(audio_input)
 
-            if not self.available or not self.recognizer:
+            if not self._ensure_available():
                 logger.info("Vosk not available, returning configuration hint")
                 return "[Vosk模型未找到，请检查 ASR_VOSK_MODEL_PATH 配置]"
 

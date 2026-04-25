@@ -69,6 +69,40 @@ class LangChainDialogueService:
             "response": response,
             "history": updated_memory
         }
+
+    async def process_message_stream(self, message: str, session_id: str, history: List[Dict[str, Any]] = None):
+        """
+        Stream a user message and yield text chunks before finalizing memory.
+        """
+        logger.info(f"Processing streaming message: {message} for session: {session_id}")
+
+        memory_manager = get_memory_manager(session_id)
+
+        if history:
+            memory_manager.load_memory_from_history(history)
+
+        memory_manager.add_message("user", message)
+        current_memory = memory_manager.get_memory()
+
+        parts = []
+        async for chunk in self.llm_service.generate_reply_stream(message, current_memory):
+            if chunk:
+                parts.append(chunk)
+                yield {
+                    "type": "chunk",
+                    "content": chunk,
+                }
+
+        response = "".join(parts).strip()
+        memory_manager.add_message("assistant", response)
+        updated_memory = memory_manager.get_memory()
+
+        logger.info(f"Generated streaming response: {response}")
+        yield {
+            "type": "done",
+            "response": response,
+            "history": updated_memory,
+        }
     
     async def process_message_with_tools(self, message: str, session_id: str, history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

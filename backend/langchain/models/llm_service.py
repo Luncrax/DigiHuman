@@ -1,59 +1,50 @@
 """
-LangChain LLM Service module for Virtual Human Assistant
-Provides language model functionality using LangChain's ChatOpenAI
+LangChain LLM service for DigiHuman.
 """
-from typing import Dict, Any, List
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from typing import Any, Dict, List
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from backend.utils.logger import get_logger
+from langchain_openai import ChatOpenAI
+
+from backend.character_config import get_character_config
 from backend.core.config import config
+from backend.utils.logger import get_logger
 
 
-# Initialize logger for this module
 logger = get_logger(__name__)
 
 
 class LangChainLLMService:
-    """LLM Service class using LangChain's ChatOpenAI"""
-    
+    """LLM service class using LangChain ChatOpenAI."""
+
     def __init__(self):
-        """Initialize the LLM Service with LangChain"""
-        # Use LangChain's ChatOpenAI for model interaction
         self.llm = ChatOpenAI(
             model=config.LLM_MODEL,
             base_url=config.LLM_BASE_URL,
             api_key=config.LLM_API_KEY,
             temperature=config.LLM_TEMPERATURE,
-            max_tokens=config.LLM_MAX_TOKENS
+            max_tokens=config.LLM_MAX_TOKENS,
         )
-        
-        # Create a simple prompt template
+
         self.prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful virtual assistant.")
+            ("system", "You are a helpful virtual assistant."),
         ])
-        
-        # Create a chain for generating responses
         self.chain = self.prompt_template | self.llm | StrOutputParser()
-        
+
         logger.info(f"LangChainLLMService initialized with model: {config.LLM_MODEL}")
-    
-    async def generate_reply(self, message: str, history: List[Dict[str, Any]] = None) -> str:
-        """
-        Generate a reply to the given message using the LLM
-        
-        Args:
-            message (str): Input message to generate reply for
-            history (List[Dict[str, Any]]): Conversation history with role and content
-            
-        Returns:
-            str: Generated reply from the LLM
-        """
-        logger.info(f"Generating reply for message: {message}")
-        
-        # Convert history to LangChain message objects
+
+    def _build_messages(self, message: str, history: List[Dict[str, Any]] = None):
         messages = []
+        character_config = get_character_config()
+        system_prompt = (
+            character_config.llm_system_prompt.strip()
+            if character_config.llm_system_prompt.strip()
+            else "You are a helpful virtual assistant."
+        )
+        messages.append(SystemMessage(content=system_prompt))
+
         if history:
             for msg in history:
                 if msg["role"] == "user":
@@ -62,113 +53,76 @@ class LangChainLLMService:
                     messages.append(AIMessage(content=msg["content"]))
                 elif msg["role"] == "system":
                     messages.append(SystemMessage(content=msg["content"]))
-        
-        # Add the current user message
         messages.append(HumanMessage(content=message))
-        
+        return messages
+
+    async def generate_reply(self, message: str, history: List[Dict[str, Any]] = None) -> str:
+        logger.info(f"Generating reply for message: {message}")
+        messages = self._build_messages(message, history)
+
         try:
-            # Use LangChain to generate response
             reply = await self.llm.ainvoke(messages)
-            
-            # Filter the response to remove any internal thought processes
             filtered_reply = self._filter_response(reply.content)
-            
             logger.info(f"Generated reply: {filtered_reply}")
             return filtered_reply
         except Exception as e:
             logger.error(f"Error generating reply: {e}")
-            # Fallback response in case of error
             return "抱歉，我在处理您的消息时遇到了问题。请稍后再试。"
-    
+
+    async def generate_reply_stream(self, message: str, history: List[Dict[str, Any]] = None):
+        logger.info(f"Streaming reply for message: {message}")
+        messages = self._build_messages(message, history)
+
+        try:
+            async for chunk in self.llm.astream(messages):
+                content = getattr(chunk, "content", "")
+                if content:
+                    yield content
+        except Exception as e:
+            logger.error(f"Error streaming reply: {e}")
+            fallback = await self.generate_reply(message, history)
+            if fallback:
+                yield fallback
+
     async def generate_reply_with_context(self, message: str, context: Dict[str, Any] = None) -> str:
-        """
-        Generate a reply with additional context information
-        
-        Args:
-            message (str): Input message to generate reply for
-            context (Dict[str, Any]): Additional context information
-            
-        Returns:
-            str: Generated reply from the LLM
-        """
         logger.info(f"Generating reply with context for: {message}")
-        
-        # Prepare messages with system context if provided
+
         messages = []
         if context and "system_prompt" in context:
             messages.append(SystemMessage(content=context["system_prompt"]))
-        
-        # Add the current user message
         messages.append(HumanMessage(content=message))
-        
+
         try:
-            # Use LangChain to generate response
             reply = await self.llm.ainvoke(messages)
-            
-            # Filter the response to remove any internal thought processes
             filtered_reply = self._filter_response(reply.content)
-            
             logger.info(f"Generated contextual reply: {filtered_reply}")
             return filtered_reply
         except Exception as e:
             logger.error(f"Error generating contextual reply: {e}")
-            # Fallback response in case of error
             return "抱歉，我在处理您的消息时遇到了问题。请稍后再试。"
-    
+
     def _filter_response(self, response: str) -> str:
-        """
-        Filter the response to remove any internal thought processes or unwanted content
-        
-        Args:
-            response (str): Raw response from the LLM
-            
-        Returns:
-            str: Filtered response
-        """
-        # Remove any internal thought processes marked with special delimiters
-        # Common patterns include: [思考], (思考), {{思考}}, etc.
         import re
-        
-        # Remove content within brackets that indicate internal thoughts
-        filtered = re.sub(r'\[.*?思考.*?\]', '', response)
-        filtered = re.sub(r'\(.*?思考.*?\)', '', response)
-        filtered = re.sub(r'\{\{.*?思考.*?\}\}', '', response)
-        
-        # Remove any leading/trailing whitespace
+
+        filtered = re.sub(r"\[.*?思考.*?\]", "", response)
+        filtered = re.sub(r"\(.*?思考.*?\)", "", filtered)
+        filtered = re.sub(r"\{\{.*?思考.*?\}\}", "", filtered)
         filtered = filtered.strip()
-        
-        # If the response is empty after filtering, return a default message
-        if not filtered:
-            return "我理解您的意思。"
-        
-        return filtered
-    
+        return filtered or "我理解您的意思。"
+
     def get_model_info(self) -> Dict[str, Any]:
-        """
-        Get information about the current model
-        
-        Returns:
-            Dict[str, Any]: Model information
-        """
         return {
             "model_name": config.LLM_MODEL,
             "service": "LangChainLLMService",
             "temperature": config.LLM_TEMPERATURE,
-            "max_tokens": config.LLM_MAX_TOKENS
+            "max_tokens": config.LLM_MAX_TOKENS,
         }
 
 
-# Global instance of LangChainLLMService
 llm_service = None
 
 
 def get_llm_service() -> LangChainLLMService:
-    """
-    Get or create the LLM service instance
-    
-    Returns:
-        LangChainLLMService: LLM service instance
-    """
     global llm_service
     if llm_service is None:
         llm_service = LangChainLLMService()
@@ -176,15 +130,5 @@ def get_llm_service() -> LangChainLLMService:
 
 
 async def get_reply(message: str, history: List[Dict[str, Any]] = None) -> str:
-    """
-    Convenience function to get a reply from the LLM
-    
-    Args:
-        message (str): Input message to generate reply for
-        history (List[Dict[str, Any]]): Conversation history
-        
-    Returns:
-        str: Generated reply from the LLM
-    """
     service = get_llm_service()
     return await service.generate_reply(message, history)
