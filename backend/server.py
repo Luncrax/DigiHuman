@@ -26,12 +26,15 @@ logger = get_logger(__name__)
 
 class TTSTestRequest(BaseModel):
     text: str
-    mode: str = "custom_voice"
+    mode: str = "edge_tts"
     voice: str | None = None
     emotion: str = "neutral"
     intensity: str = "low"
     instruct: str | None = None
     voice_prompt_path: str | None = None
+    rate: str | None = None
+    pitch: str | None = None
+    volume: str | None = None
 
 
 class CharacterConfigRequest(BaseModel):
@@ -157,8 +160,12 @@ class DigiHumanWebSocketServer:
                     intensity=payload.intensity,
                     instruct=payload.instruct,
                     voice_prompt_path=payload.voice_prompt_path or None,
+                    rate=payload.rate or config.EDGE_TTS_RATE,
+                    pitch=payload.pitch or config.EDGE_TTS_PITCH,
+                    volume=payload.volume or config.EDGE_TTS_VOLUME,
                 )
                 elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+                audio_format = "audio/mpeg" if config.TTS_SERVICE == "edge_tts" else "audio/wav"
 
                 return {
                     "status": "ok",
@@ -169,8 +176,11 @@ class DigiHumanWebSocketServer:
                     "voice_prompt_path": payload.voice_prompt_path or None,
                     "elapsed_ms": elapsed_ms,
                     "audio_base64": base64.b64encode(audio_bytes).decode("utf-8"),
-                    "audio_format": "audio/wav",
+                    "audio_format": audio_format,
                     "audio_size": len(audio_bytes),
+                    "rate": payload.rate or config.EDGE_TTS_RATE,
+                    "pitch": payload.pitch or config.EDGE_TTS_PITCH,
+                    "volume": payload.volume or config.EDGE_TTS_VOLUME,
                 }
             except Exception as exc:
                 return {
@@ -311,7 +321,7 @@ class DigiHumanWebSocketServer:
         services = {
             "websocket": websocket_status,
             "llm": llm_status,
-            "qwen_tts": qwen_status,
+            "tts": qwen_status,
             "asr": asr_status,
             "live2d": live2d_status,
         }
@@ -350,12 +360,16 @@ class DigiHumanWebSocketServer:
     async def _check_qwen_status(self):
         if not config.TTS_ENABLED or config.TTS_SERVICE != "qwen3_tts":
             return {
-                "status": "warning",
-                "label": "Qwen3-TTS",
-                "summary": "Qwen3-TTS 当前未作为主 TTS 服务启用。",
+                "status": "healthy" if config.TTS_ENABLED and config.TTS_SERVICE == "edge_tts" else "warning",
+                "label": "TTS",
+                "summary": "Edge TTS 当前作为主语音服务运行。" if config.TTS_ENABLED and config.TTS_SERVICE == "edge_tts" else "TTS 未启用或尚未配置主语音服务。",
                 "details": {
                     "enabled": config.TTS_ENABLED,
                     "tts_service": config.TTS_SERVICE,
+                    "voice": config.TTS_VOICE,
+                    "rate": config.EDGE_TTS_RATE,
+                    "pitch": config.EDGE_TTS_PITCH,
+                    "volume": config.EDGE_TTS_VOLUME,
                     "server_url": config.QWEN3_TTS_SERVER_URL,
                 },
             }
@@ -416,7 +430,13 @@ class DigiHumanWebSocketServer:
             }
 
         service = self.ws_handler.asr_service
-        available = getattr(service, "available", True) if service else False
+        if service and hasattr(service, "_ensure_available"):
+            try:
+                service._ensure_available()
+            except Exception as exc:
+                logger.warning("ASR availability refresh failed: %s", exc)
+
+        available = bool(getattr(service, "available", True)) if service else False
         service_name = type(service).__name__ if service else "None"
         status = "healthy" if available else "warning"
         summary = "ASR 服务已就绪。" if available else "ASR 服务已加载，但模型或依赖可能未准备完成。"
@@ -430,6 +450,11 @@ class DigiHumanWebSocketServer:
                 "service": config.ASR_SERVICE,
                 "implementation": service_name,
                 "available": available,
+                "configured_model_path": config.ASR_VOSK_MODEL_PATH if config.ASR_SERVICE == "vosk" else None,
+                "loaded_model_path": getattr(service, "loaded_model_path", None),
+                "import_error": getattr(service, "import_error", None),
+                "last_error": getattr(service, "last_error", None),
+                "python_executable": getattr(service, "python_executable", None),
             },
         }
 
@@ -443,8 +468,8 @@ class DigiHumanWebSocketServer:
             status = "healthy"
             summary = "Live2D 前后端资源已就绪。"
         elif frontend_ready:
-            status = "warning"
-            summary = "Live2D 前端资源已就绪，但后端本地 Live2D 模型未启用。"
+            status = "healthy"
+            summary = "Live2D 当前由前端状态机驱动。"
         else:
             status = "error"
             summary = "Live2D 关键资源缺失。"
@@ -454,6 +479,7 @@ class DigiHumanWebSocketServer:
             "label": "Live2D",
             "summary": summary,
             "details": {
+                "driver_mode": "backend_local_model" if backend_enabled else "frontend_state_machine",
                 "backend_enabled": bool(config.LIVE2D_ENABLED),
                 "backend_model_loaded": bool(self.ws_handler.live2d_model),
                 "frontend_model_exists": frontend_model.exists(),

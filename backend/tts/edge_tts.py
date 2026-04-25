@@ -1,70 +1,86 @@
 """
-Edge TTS Implementation for local text-to-speech
+Edge TTS implementation for low-latency speech synthesis.
 """
 import asyncio
-from typing import Optional
+
+from backend.core.config import config
+
 from .tts_interface import TTSInterface
 
 
 class EdgeTTS(TTSInterface):
-    """Edge TTS implementation for text-to-speech"""
-    
+    """Edge TTS implementation for text-to-speech."""
+
+    FALLBACK_VOICES = [
+        "zh-CN-XiaoxiaoNeural",
+        "zh-CN-XiaoyiNeural",
+        "zh-CN-liaoning-XiaobeiNeural",
+    ]
+
     def __init__(self):
-        """Initialize Edge TTS"""
         try:
             import edge_tts
+
             self.edge_tts = edge_tts
             self.available = True
-        except ImportError:
-            print("Edge TTS not installed, using mock implementation")
+        except ImportError as exc:
+            self.edge_tts = None
             self.available = False
-    
-    async def async_synthesize(self, text: str, voice: str = "zh-CN-YunxiNeural", 
-                             model: str = "tts-1", **kwargs) -> bytes:
-        """Asynchronously synthesize text to speech"""
-        try:
-            if self.available:
-                # Use Edge TTS for real synthesis
-                communicate = self.edge_tts.Communicate(text, voice)
-                audio_data = b""
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        audio_data += chunk["data"]
-                return audio_data
-            else:
-                # Mock implementation for testing
-                # Return a small silent audio file
-                import io
-                import wave
-                
-                # Create a silent WAV file
-                buffer = io.BytesIO()
-                with wave.open(buffer, 'wb') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(22050)
-                    # 1 second of silence
-                    wav_file.writeframes(b'\x00' * 22050 * 2)
-                
-                buffer.seek(0)
-                return buffer.read()
-        except Exception as e:
-            print(f"Error in Edge TTS synthesis: {e}")
-            # Return mock audio
-            import io
-            import wave
-            
-            buffer = io.BytesIO()
-            with wave.open(buffer, 'wb') as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(22050)
-                wav_file.writeframes(b'\x00' * 22050 * 2)
-            
-            buffer.seek(0)
-            return buffer.read()
-    
-    def synthesize(self, text: str, voice: str = "zh-CN-YunxiNeural", 
-                  model: str = "tts-1", **kwargs) -> bytes:
-        """Synchronously synthesize text to speech"""
-        return asyncio.run(self.async_synthesize(text, voice, model, **kwargs))
+            print(f"Edge TTS not installed: {exc}")
+
+    async def async_synthesize(
+        self,
+        text: str,
+        voice: str = "zh-CN-YunxiNeural",
+        model: str = "edge_tts",
+        rate: str | None = None,
+        pitch: str | None = None,
+        volume: str | None = None,
+        **kwargs,
+    ) -> bytes:
+        if not self.available or not self.edge_tts:
+            raise RuntimeError("edge-tts is not installed in the current Python environment")
+
+        requested_voice = voice or config.TTS_VOICE
+        voices_to_try = [requested_voice]
+        voices_to_try.extend(
+            fallback for fallback in self.FALLBACK_VOICES
+            if fallback not in voices_to_try
+        )
+
+        last_error = None
+        for candidate_voice in voices_to_try:
+            for attempt in range(2):
+                try:
+                    communicate = self.edge_tts.Communicate(
+                        text=text,
+                        voice=candidate_voice,
+                        rate=rate or config.EDGE_TTS_RATE,
+                        pitch=pitch or config.EDGE_TTS_PITCH,
+                        volume=volume or config.EDGE_TTS_VOLUME,
+                    )
+
+                    audio_data = bytearray()
+                    async for chunk in communicate.stream():
+                        if chunk.get("type") == "audio":
+                            audio_data.extend(chunk["data"])
+
+                    if audio_data:
+                        return bytes(audio_data)
+                    last_error = RuntimeError(f"Edge TTS returned no audio for voice {candidate_voice}")
+                except Exception as exc:
+                    last_error = exc
+
+                if attempt == 0:
+                    await asyncio.sleep(0.35)
+
+        raise RuntimeError(f"Edge TTS synthesis failed after retry/fallback: {last_error}")
+
+    def synthesize(
+        self,
+        text: str,
+        voice: str = "zh-CN-YunxiNeural",
+        model: str = "edge_tts",
+        **kwargs,
+    ) -> bytes:
+        return asyncio.run(self.async_synthesize(text, voice=voice, model=model, **kwargs))

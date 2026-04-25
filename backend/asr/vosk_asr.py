@@ -4,6 +4,7 @@ Vosk ASR implementation for local speech recognition.
 import asyncio
 import io
 import logging
+import sys
 import wave
 from pathlib import Path
 from typing import Union
@@ -26,9 +27,17 @@ class VoskASR(ASRInterface):
         self.model = None
         self.recognizer = None
         self.json = None
+        self.loaded_model_path = None
+        self.last_error = None
+        self.import_error = None
+        self.searched_paths = []
+        self.python_executable = sys.executable
         self._initialize()
 
     def _initialize(self):
+        self.loaded_model_path = None
+        self.last_error = None
+        self.import_error = None
         try:
             from vosk import KaldiRecognizer, Model
             import json
@@ -64,6 +73,7 @@ class VoskASR(ASRInterface):
                 path for path in [*model_paths, *discovered_paths]
                 if not (str(path) in seen or seen.add(str(path)))
             ]
+            self.searched_paths = [str(path) for path in model_paths]
 
             for path in model_paths:
                 try:
@@ -71,9 +81,11 @@ class VoskASR(ASRInterface):
                         logger.warning("Skipping missing Vosk model path: %s", path)
                         continue
                     self.model = Model(str(path))
+                    self.loaded_model_path = str(path)
                     logger.info("Successfully loaded Vosk model from %s", path)
                     break
                 except Exception as exc:
+                    self.last_error = str(exc)
                     logger.warning("Failed to load Vosk model from %s: %s", path, exc)
 
             if self.model:
@@ -81,10 +93,13 @@ class VoskASR(ASRInterface):
                 self.recognizer.SetWords(True)
                 self.available = True
             else:
+                self.last_error = self.last_error or "Vosk model not found"
                 logger.warning("Vosk model not found, ASR will fall back to a configuration hint")
 
         except ImportError as exc:
             logger.error("Vosk not installed: %s", exc)
+            self.import_error = str(exc)
+            self.last_error = str(exc)
             self.available = False
 
     def _ensure_available(self) -> bool:

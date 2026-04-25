@@ -12,6 +12,96 @@ export function useAudioRecorder() {
   let audioChunks = []
   let levelAnimationId = null
 
+  const arrayBufferToBase64 = (buffer) => {
+    let binary = ''
+    const bytes = new Uint8Array(buffer)
+    const len = bytes.byteLength
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i])
+    }
+    return btoa(binary)
+  }
+
+  const downsampleBuffer = (buffer, inputSampleRate, outputSampleRate) => {
+    if (outputSampleRate >= inputSampleRate) {
+      return buffer
+    }
+
+    const sampleRateRatio = inputSampleRate / outputSampleRate
+    const newLength = Math.round(buffer.length / sampleRateRatio)
+    const result = new Float32Array(newLength)
+    let offsetResult = 0
+    let offsetBuffer = 0
+
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio)
+      let accum = 0
+      let count = 0
+
+      for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
+        accum += buffer[i]
+        count += 1
+      }
+
+      result[offsetResult] = count > 0 ? accum / count : 0
+      offsetResult += 1
+      offsetBuffer = nextOffsetBuffer
+    }
+
+    return result
+  }
+
+  const floatTo16BitPCM = (view, offset, input) => {
+    for (let i = 0; i < input.length; i += 1, offset += 2) {
+      const sample = Math.max(-1, Math.min(1, input[i]))
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
+    }
+  }
+
+  const encodeWav = (samples, sampleRate) => {
+    const buffer = new ArrayBuffer(44 + samples.length * 2)
+    const view = new DataView(buffer)
+    const writeString = (target, offset, value) => {
+      for (let i = 0; i < value.length; i += 1) {
+        target.setUint8(offset + i, value.charCodeAt(i))
+      }
+    }
+
+    writeString(view, 0, 'RIFF')
+    view.setUint32(4, 36 + samples.length * 2, true)
+    writeString(view, 8, 'WAVE')
+    writeString(view, 12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true)
+    view.setUint16(22, 1, true)
+    view.setUint32(24, sampleRate, true)
+    view.setUint32(28, sampleRate * 2, true)
+    view.setUint16(32, 2, true)
+    view.setUint16(34, 16, true)
+    writeString(view, 36, 'data')
+    view.setUint32(40, samples.length * 2, true)
+    floatTo16BitPCM(view, 44, samples)
+
+    return buffer
+  }
+
+  const convertBlobToWavBase64 = async (audioBlob) => {
+    const blobArrayBuffer = await audioBlob.arrayBuffer()
+    const decodeContext = new (window.AudioContext || window.webkitAudioContext)()
+
+    try {
+      const audioBuffer = await decodeContext.decodeAudioData(blobArrayBuffer.slice(0))
+      const channelData = audioBuffer.numberOfChannels > 1
+        ? audioBuffer.getChannelData(0)
+        : audioBuffer.getChannelData(0)
+      const downsampled = downsampleBuffer(channelData, audioBuffer.sampleRate, 16000)
+      const wavBuffer = encodeWav(downsampled, 16000)
+      return arrayBufferToBase64(wavBuffer)
+    } finally {
+      await decodeContext.close()
+    }
+  }
+
   const requestPermission = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -128,16 +218,7 @@ export function useAudioRecorder() {
             return
           }
           
-          const arrayBuffer = await audioBlob.arrayBuffer()
-          console.log('Array buffer length:', arrayBuffer.byteLength)
-          
-          if (arrayBuffer.byteLength === 0) {
-            console.error('Array buffer is empty')
-            resolve(null)
-            return
-          }
-          
-          const base64 = arrayBufferToBase64(arrayBuffer)
+          const base64 = await convertBlobToWavBase64(audioBlob)
           console.log('Base64 length:', base64.length)
           
           if (!base64 || base64.length === 0) {
@@ -212,16 +293,6 @@ export function useAudioRecorder() {
       audioLevel.value = 0
       audioChunks = []
     }
-  }
-
-  const arrayBufferToBase64 = (buffer) => {
-    let binary = ''
-    const bytes = new Uint8Array(buffer)
-    const len = bytes.byteLength
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i])
-    }
-    return btoa(binary)
   }
 
   onUnmounted(() => {

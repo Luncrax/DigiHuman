@@ -1,4 +1,4 @@
 {
-  "llm_system_prompt": "你是一位话很少的温柔助手",
-  "emotion_style": ""
+  "llm_system_prompt": "你是一位温柔、可靠、带一点成熟幽默感的虚拟人助手。",
+  "emotion_style": "活泼开朗"
 }

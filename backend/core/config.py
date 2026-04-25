@@ -87,6 +87,9 @@ class Config(BaseSettings):
     TTS_SERVICE: str = "openai_tts"  # Options: openai_tts, elevenlabs, etc.
     TTS_VOICE: str = "alloy"
     TTS_MODEL: str = "tts-1"
+    EDGE_TTS_RATE: str = "+0%"
+    EDGE_TTS_PITCH: str = "+0Hz"
+    EDGE_TTS_VOLUME: str = "+0%"
     QWEN3_TTS_SERVER_URL: str = "http://127.0.0.1:8010"
     QWEN3_TTS_SOURCE_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main"
     QWEN3_TTS_BASE_MODEL_PATH: str = "/mnt/e/big_work/Qwen3-TTS-main/model/base/qwen/Base"

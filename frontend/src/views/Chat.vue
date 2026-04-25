@@ -435,6 +435,17 @@ const ensurePendingAssistantForResponse = (responseId) => {
   return message
 }
 
+const hasRecentUserMessage = (content) => {
+  const normalized = String(content || '').trim()
+  if (!normalized) {
+    return false
+  }
+
+  return messages.value
+    .slice(-6)
+    .some((item) => item.role === 'user' && String(item.content || '').trim() === normalized)
+}
+
 const animateAssistantText = (message, text) => {
   if (typingTimer) {
     clearInterval(typingTimer)
@@ -537,16 +548,13 @@ const handleResponseAudio = async (data) => {
 }
 
 const handleResponseStart = async (data) => {
-  if (data.user_text) {
-    const lastMessage = messages.value[messages.value.length - 1]
-    if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== data.user_text) {
-      messages.value.push({
-        id: makeId('user'),
-        role: 'user',
-        content: data.user_text,
-        status: 'ready',
-      })
-    }
+  if (data.user_text && !hasRecentUserMessage(data.user_text)) {
+    messages.value.push({
+      id: makeId('user'),
+      role: 'user',
+      content: data.user_text,
+      status: 'ready',
+    })
   }
 
   const assistantMessage = ensurePendingAssistantForResponse(data.response_id)
@@ -568,16 +576,13 @@ const handleResponseDelta = async (data) => {
 const handleFullResponse = async (data) => {
   runtimeWarnings.value = normalizeRuntimeWarnings(data.warnings).slice(0, 3)
 
-  if (data.user_text) {
-    const lastMessage = messages.value[messages.value.length - 1]
-    if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== data.user_text) {
-      messages.value.push({
-        id: makeId('user'),
-        role: 'user',
-        content: data.user_text,
-        status: 'ready',
-      })
-    }
+  if (data.user_text && !hasRecentUserMessage(data.user_text)) {
+    messages.value.push({
+      id: makeId('user'),
+      role: 'user',
+      content: data.user_text,
+      status: 'ready',
+    })
   }
 
   if (data.emotion) {

@@ -4,20 +4,20 @@
       <div class="hero-block">
         <div>
           <p class="eyebrow">Character Studio</p>
-          <h1 class="hero-title">角色配置与 TTS 测试台</h1>
+          <h1 class="hero-title">角色配置与 EdgeTTS 测试台</h1>
           <p class="hero-copy">
-            先保存角色的 LLM system prompt 和情绪表达风格，再用同一页面直接测试语音效果和耗时。
+            在这里保存角色的 system prompt 和情绪表达风格，并直接测试 EdgeTTS 的声音、语速、音调和音量。
           </p>
         </div>
 
         <div class="hero-meta">
           <div class="meta-card">
-            <span class="meta-label">当前主模式</span>
-            <strong>custom_voice</strong>
+            <span class="meta-label">当前主 TTS</span>
+            <strong>EdgeTTS</strong>
           </div>
           <div class="meta-card">
-            <span class="meta-label">Prompt 文件</span>
-            <strong class="truncate-path">voice_clone_prompt_wzc.pt</strong>
+            <span class="meta-label">默认音色</span>
+            <strong class="truncate-path">{{ form.voice }}</strong>
           </div>
         </div>
       </div>
@@ -25,7 +25,7 @@
       <div class="panel-strong panel-form">
         <div class="panel-header">
           <h2>角色配置</h2>
-          <p>这里保存后，聊天页下一轮对话会自动使用新的 system prompt 和情绪表达风格。</p>
+          <p>保存后，聊天页下一轮对话会自动使用新的角色设定。</p>
         </div>
 
         <el-form label-position="top" class="tts-form">
@@ -34,7 +34,7 @@
               v-model="characterConfig.llm_system_prompt"
               type="textarea"
               :rows="6"
-              placeholder="例如：你是一位温柔、可靠、带一点成熟幽默感的虚拟人助手。回答时保持陪伴感。"
+              placeholder="例如：你是一位温柔、可靠、带一点成熟幽默感的虚拟人助手。"
             />
           </el-form-item>
 
@@ -43,7 +43,7 @@
               v-model="characterConfig.emotion_style"
               type="textarea"
               :rows="4"
-              placeholder="例如：表达情绪时更自然、轻柔、偏陪伴感，不要过度夸张。"
+              placeholder="例如：表达情绪时更自然、克制、偏陪伴感，不要过度夸张。"
             />
           </el-form-item>
 
@@ -57,8 +57,8 @@
       <div class="lab-grid">
         <div class="panel-strong panel-form">
           <div class="panel-header">
-            <h2>测试参数</h2>
-            <p>直接切换模式，判断速度和声音差异。</p>
+            <h2>EdgeTTS 参数</h2>
+            <p>直接测试不同音色和语音参数，优先追求低延迟和稳定播放。</p>
           </div>
 
           <el-form label-position="top" class="tts-form">
@@ -72,21 +72,36 @@
             </el-form-item>
 
             <div class="inline-grid">
-              <el-form-item label="模式">
-                <el-select v-model="form.mode">
-                  <el-option label="custom_voice（推荐，主链路）" value="custom_voice" />
-                  <el-option label="prompt_clone（Base + .pt）" value="prompt_clone" />
-                  <el-option label="voice_design" value="voice_design" />
+              <el-form-item label="中文音色">
+                <el-select v-model="form.voice">
+                  <el-option label="zh-CN-YunxiNeural" value="zh-CN-YunxiNeural" />
+                  <el-option label="zh-CN-XiaoxiaoNeural" value="zh-CN-XiaoxiaoNeural" />
+                  <el-option label="zh-CN-YunjianNeural" value="zh-CN-YunjianNeural" />
+                  <el-option label="zh-CN-XiaoyiNeural" value="zh-CN-XiaoyiNeural" />
                 </el-select>
               </el-form-item>
 
-              <el-form-item label="说话人">
-                <el-input v-model="form.voice" />
+              <el-form-item label="模式">
+                <el-input :model-value="'edge_tts'" disabled />
               </el-form-item>
             </div>
 
             <div class="inline-grid">
-              <el-form-item label="情绪">
+              <el-form-item label="语速">
+                <el-input v-model="form.rate" placeholder="例如：+0% / -15% / +20%" />
+              </el-form-item>
+
+              <el-form-item label="音调">
+                <el-input v-model="form.pitch" placeholder="例如：+0Hz / -30Hz / +40Hz" />
+              </el-form-item>
+            </div>
+
+            <div class="inline-grid">
+              <el-form-item label="音量">
+                <el-input v-model="form.volume" placeholder="例如：+0% / -10% / +20%" />
+              </el-form-item>
+
+              <el-form-item label="情绪标签（仅展示）">
                 <el-select v-model="form.emotion">
                   <el-option label="neutral" value="neutral" />
                   <el-option label="joy" value="joy" />
@@ -97,32 +112,11 @@
                   <el-option label="shy" value="shy" />
                 </el-select>
               </el-form-item>
-
-              <el-form-item label="强度">
-                <el-select v-model="form.intensity">
-                  <el-option label="low" value="low" />
-                  <el-option label="medium" value="medium" />
-                  <el-option label="high" value="high" />
-                </el-select>
-              </el-form-item>
             </div>
-
-            <el-form-item label="TTS instruct（可选）">
-              <el-input
-                v-model="form.instruct"
-                type="textarea"
-                :rows="3"
-                placeholder="留空时会由 Emotion Controller 自动生成语气指令"
-              />
-            </el-form-item>
-
-            <el-form-item label=".pt Prompt 路径（仅 prompt_clone 生效）">
-              <el-input v-model="form.voice_prompt_path" />
-            </el-form-item>
 
             <div class="action-row">
               <el-button type="primary" :loading="loading" @click="runTest">开始测试</el-button>
-              <el-button :loading="abLoading" @click="runABTest">AB 对比</el-button>
+              <el-button :loading="abLoading" @click="runABTest">AB 对比音色</el-button>
               <el-button :disabled="!audioUrl" @click="playAudio">播放结果</el-button>
               <el-button :disabled="!audioUrl" @click="stopAudio">停止播放</el-button>
             </div>
@@ -132,7 +126,7 @@
         <div class="panel-strong panel-result">
           <div class="panel-header">
             <h2>测试结果</h2>
-            <p>重点看耗时、实际模式和输出音频。</p>
+            <p>重点关注耗时、音色和音频大小。</p>
           </div>
 
           <div class="result-stack">
@@ -153,16 +147,20 @@
 
             <div class="detail-card">
               <div class="detail-row">
-                <span>实际模式</span>
-                <strong>{{ result.mode || '--' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>说话人</span>
+                <span>音色</span>
                 <strong>{{ result.voice || '--' }}</strong>
               </div>
               <div class="detail-row">
-                <span>Prompt 路径</span>
-                <strong class="truncate-path">{{ result.voice_prompt_path || '--' }}</strong>
+                <span>语速</span>
+                <strong>{{ result.rate || '--' }}</strong>
+              </div>
+              <div class="detail-row">
+                <span>音调</span>
+                <strong>{{ result.pitch || '--' }}</strong>
+              </div>
+              <div class="detail-row">
+                <span>音量</span>
+                <strong>{{ result.volume || '--' }}</strong>
               </div>
             </div>
 
@@ -186,12 +184,12 @@
             <div v-if="abResults.length" class="ab-grid">
               <div
                 v-for="item in abResults"
-                :key="item.mode"
+                :key="item.voice"
                 class="ab-card"
-                :class="{ active: activeABMode === item.mode }"
+                :class="{ active: activeABVoice === item.voice }"
               >
                 <div class="ab-topline">
-                  <strong>{{ item.mode }}</strong>
+                  <strong>{{ item.voice }}</strong>
                   <span>{{ item.elapsed_ms ? `${item.elapsed_ms} ms` : '--' }}</span>
                 </div>
                 <div class="ab-meta">
@@ -199,8 +197,8 @@
                   <span>大小：{{ item.audio_size ? `${item.audio_size} bytes` : '--' }}</span>
                 </div>
                 <div class="ab-actions">
-                  <el-button size="small" @click="playABAudio(item.mode)">播放</el-button>
-                  <el-button size="small" @click="useABResult(item.mode)">设为主结果</el-button>
+                  <el-button size="small" @click="playABAudio(item.voice)">播放</el-button>
+                  <el-button size="small" @click="useABResult(item.voice)">设为主结果</el-button>
                 </div>
                 <p v-if="item.message" class="ab-message">{{ item.message }}</p>
               </div>
@@ -208,8 +206,8 @@
 
             <div class="tip-card">
               <p>说明：</p>
-              <p>`custom_voice` 是当前聊天主链路，通常更快更稳定。</p>
-              <p>`prompt_clone` 会走 `Base + voice_clone_prompt_wzc.pt`，更适合单独比对音色相似度。</p>
+              <p>EdgeTTS 更适合你现在的实时聊天场景，延迟通常会明显低于 Qwen3-TTS。</p>
+              <p>如果后面你还想做更强的情绪表达，我们可以再用 rate / pitch / volume 做一层轻量情绪映射。</p>
             </div>
           </div>
         </div>
@@ -226,14 +224,16 @@ const characterConfig = reactive({
   llm_system_prompt: '',
   emotion_style: '',
 })
+
 const form = reactive({
-  text: '你好，我现在在做音色对比测试。',
-  mode: 'custom_voice',
-  voice: 'Vivian',
+  text: '你好，我现在在做 EdgeTTS 测试。',
+  mode: 'edge_tts',
+  voice: 'zh-CN-XiaoxiaoNeural',
   emotion: 'neutral',
   intensity: 'low',
-  instruct: '',
-  voice_prompt_path: '/mnt/e/big_work/DigiHuman/backend/tts/voice_clone_prompt_wzc.pt',
+  rate: '+0%',
+  pitch: '+0Hz',
+  volume: '+0%',
 })
 
 const loading = ref(false)
@@ -246,11 +246,13 @@ const result = reactive({
   audio_size: null,
   mode: '',
   voice: '',
-  voice_prompt_path: '',
+  rate: '',
+  pitch: '',
+  volume: '',
   message: '',
 })
 const abResults = ref([])
-const activeABMode = ref('')
+const activeABVoice = ref('')
 
 const audioRef = ref(null)
 const audioUrl = ref('')
@@ -290,12 +292,14 @@ const resetResult = () => {
   result.audio_size = null
   result.mode = ''
   result.voice = ''
-  result.voice_prompt_path = ''
+  result.rate = ''
+  result.pitch = ''
+  result.volume = ''
   result.message = ''
 }
 
-const buildAudioUrl = async (audioBase64, audioFormat = 'audio/wav') => {
-  const mime = audioFormat || 'audio/wav'
+const buildAudioUrl = async (audioBase64, audioFormat = 'audio/mpeg') => {
+  const mime = audioFormat || 'audio/mpeg'
   const binary = atob(audioBase64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i += 1) {
@@ -305,8 +309,8 @@ const buildAudioUrl = async (audioBase64, audioFormat = 'audio/wav') => {
   audioUrl.value = URL.createObjectURL(new Blob([bytes], { type: mime }))
 }
 
-const buildStandaloneAudioUrl = (audioBase64, audioFormat = 'audio/wav') => {
-  const mime = audioFormat || 'audio/wav'
+const buildStandaloneAudioUrl = (audioBase64, audioFormat = 'audio/mpeg') => {
+  const mime = audioFormat || 'audio/mpeg'
   const binary = atob(audioBase64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i += 1) {
@@ -358,7 +362,7 @@ const saveCharacterConfig = async () => {
     if (data.status !== 'ok') {
       throw new Error(data.message || '保存角色配置失败')
     }
-    ElMessage.success('角色配置已保存，新的聊天会自动生效')
+    ElMessage.success('角色配置已保存，聊天页下一轮会自动生效')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存角色配置失败')
   } finally {
@@ -374,19 +378,22 @@ const runTest = async () => {
   try {
     const data = await requestTTSTest({
       text: form.text,
-      mode: form.mode,
+      mode: 'edge_tts',
       voice: form.voice,
       emotion: form.emotion,
       intensity: form.intensity,
-      instruct: form.instruct || null,
-      voice_prompt_path: form.mode === 'prompt_clone' ? form.voice_prompt_path : null,
+      rate: form.rate,
+      pitch: form.pitch,
+      volume: form.volume,
     })
     result.status = data.status || 'error'
     result.elapsed_ms = data.elapsed_ms ?? null
     result.audio_size = data.audio_size ?? null
-    result.mode = data.mode || form.mode
+    result.mode = data.mode || 'edge_tts'
     result.voice = data.voice || form.voice
-    result.voice_prompt_path = data.voice_prompt_path || ''
+    result.rate = data.rate || form.rate
+    result.pitch = data.pitch || form.pitch
+    result.volume = data.volume || form.volume
     result.message = data.message || ''
 
     if (data.audio_base64) {
@@ -403,52 +410,47 @@ const runTest = async () => {
 const runABTest = async () => {
   abLoading.value = true
   abResults.value = []
-  activeABMode.value = ''
+  activeABVoice.value = ''
   revokeABAudioUrls()
 
-  const modes = [
-    {
-      mode: 'custom_voice',
-      voice_prompt_path: null,
-    },
-    {
-      mode: 'prompt_clone',
-      voice_prompt_path: form.voice_prompt_path,
-    },
-  ]
+  const voices = ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural']
 
   try {
     const settled = await Promise.all(
-      modes.map(async (item) => {
+      voices.map(async (voice) => {
         const data = await requestTTSTest({
           text: form.text,
-          mode: item.mode,
-          voice: form.voice,
+          mode: 'edge_tts',
+          voice,
           emotion: form.emotion,
           intensity: form.intensity,
-          instruct: form.instruct || null,
-          voice_prompt_path: item.voice_prompt_path,
+          rate: form.rate,
+          pitch: form.pitch,
+          volume: form.volume,
         })
 
         if (data.audio_base64) {
-          abAudioUrls.value[item.mode] = buildStandaloneAudioUrl(data.audio_base64, data.audio_format)
+          abAudioUrls.value[voice] = buildStandaloneAudioUrl(data.audio_base64, data.audio_format)
         }
 
         return {
-          mode: item.mode,
+          voice,
           status: data.status || 'error',
           elapsed_ms: data.elapsed_ms ?? null,
           audio_size: data.audio_size ?? null,
           message: data.message || '',
+          rate: data.rate || form.rate,
+          pitch: data.pitch || form.pitch,
+          volume: data.volume || form.volume,
         }
       })
     )
 
     abResults.value = settled
-    activeABMode.value = settled[0]?.mode || ''
+    activeABVoice.value = settled[0]?.voice || ''
   } catch (error) {
     abResults.value = [{
-      mode: 'compare',
+      voice: 'compare',
       status: 'error',
       elapsed_ms: null,
       audio_size: null,
@@ -474,29 +476,31 @@ const stopAudio = () => {
   audioRef.value.currentTime = 0
 }
 
-const playABAudio = async (mode) => {
-  await useABResult(mode)
+const playABAudio = async (voice) => {
+  await useABResult(voice)
   if (!audioRef.value) {
     return
   }
   await audioRef.value.play()
 }
 
-const useABResult = async (mode) => {
-  const url = abAudioUrls.value[mode]
-  const selected = abResults.value.find((item) => item.mode === mode)
+const useABResult = async (voice) => {
+  const url = abAudioUrls.value[voice]
+  const selected = abResults.value.find((item) => item.voice === voice)
   if (!url || !selected) {
     return
   }
   revokeAudioUrl()
   audioUrl.value = url
-  activeABMode.value = mode
+  activeABVoice.value = voice
   result.status = selected.status
   result.elapsed_ms = selected.elapsed_ms
   result.audio_size = selected.audio_size
-  result.mode = selected.mode
-  result.voice = form.voice
-  result.voice_prompt_path = mode === 'prompt_clone' ? form.voice_prompt_path : ''
+  result.mode = 'edge_tts'
+  result.voice = selected.voice
+  result.rate = selected.rate || form.rate
+  result.pitch = selected.pitch || form.pitch
+  result.volume = selected.volume || form.volume
   result.message = selected.message || ''
 }
 

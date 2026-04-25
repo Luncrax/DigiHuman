@@ -73,6 +73,25 @@ class WebSocketHandler:
             except Exception as e:
                 logger.error(f"Failed to initialize Live2D model: {e}")
 
+    def _get_audio_format(self) -> str:
+        if config.TTS_SERVICE == "edge_tts":
+            return "audio/mpeg"
+        return "audio/wav"
+
+    def _prepare_tts_text(self, text: str) -> str:
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return ""
+
+        cleaned = re.sub(r"（[^（）]{0,80}）", "", cleaned)
+        cleaned = re.sub(r"\([^()]{0,80}\)", "", cleaned)
+        cleaned = re.sub(r"【[^【】]{0,80}】", "", cleaned)
+        cleaned = re.sub(r"\[[^\[\]]{0,80}\]", "", cleaned)
+        cleaned = re.sub(r"[ \t]+", " ", cleaned)
+        cleaned = re.sub(r"(……){2,}", "……", cleaned)
+        cleaned = cleaned.strip(" ，,、；;：:")
+        return cleaned or str(text or "").strip()
+
     async def _synthesize_audio(
         self,
         text: str,
@@ -83,6 +102,10 @@ class WebSocketHandler:
             return None
 
         try:
+            spoken_text = self._prepare_tts_text(text)
+            if not spoken_text:
+                return None
+
             synth_kwargs: Dict[str, Any] = {
                 "voice": config.TTS_VOICE,
                 "model": config.TTS_MODEL,
@@ -101,7 +124,7 @@ class WebSocketHandler:
                     if value is not None and key != "strategy"
                 })
 
-            audio_response = await self.tts_service.async_synthesize(text, **synth_kwargs)
+            audio_response = await self.tts_service.async_synthesize(spoken_text, **synth_kwargs)
             return base64.b64encode(audio_response).decode("utf-8")
         except Exception as e:
             logger.error(f"TTS synthesis error: {e}")
@@ -251,11 +274,12 @@ class WebSocketHandler:
         tts_params: Optional[Dict[str, Any]] = None,
     ) -> None:
         audio_b64 = await self._synthesize_audio(text, emotion_result, tts_params)
+        audio_format = self._get_audio_format()
         payload: Dict[str, Any] = {
             "type": "response-audio",
             "response_id": response_id,
             "audio": audio_b64,
-            "audio_format": "audio/wav" if audio_b64 else None,
+            "audio_format": audio_format if audio_b64 else None,
             "warnings": [],
         }
 
@@ -796,7 +820,7 @@ class WebSocketHandler:
                 json.dumps({
                     "type": "tts_response",
                     "audio": base64.b64encode(audio_response).decode("utf-8") if isinstance(audio_response, bytes) else audio_response,
-                    "audio_format": "audio/wav",
+                    "audio_format": self._get_audio_format(),
                     "text": control_result.enhanced_text,
                     "tts_params": tts_params,
                     "tts_instruct": tts_params.get("instruct"),
