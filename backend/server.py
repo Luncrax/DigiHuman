@@ -10,7 +10,7 @@ import base64
 import urllib.error
 import urllib.request
 from pathlib import Path
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -21,6 +21,14 @@ from backend.character_config import CharacterConfig, get_character_config_store
 from backend.core.config import config
 from backend.auth import extract_bearer_token, get_current_user_from_authorization
 from backend.sqlite_store import get_sqlite_store
+from backend.study_assistant import get_study_assistant_service
+from backend.study_assistant.importer import (
+    KNOWLEDGE_ROOT,
+    SUPPORTED_EXTENSIONS,
+    iter_knowledge_items,
+    iter_knowledge_items_from_paths,
+    resolve_relative_knowledge_path,
+)
 from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -52,6 +60,15 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class StudyPlanRequest(BaseModel):
+    goal: str
+
+
+class StudyToolRequest(BaseModel):
+    command: str
+    payload: dict | None = None
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -99,6 +116,7 @@ class DigiHumanWebSocketServer:
     def __init__(self):
         self.app = FastAPI(title=config.PROJECT_NAME, version=config.APP_VERSION)
         self.ws_handler = WebSocketHandler()
+        self.study_assistant = get_study_assistant_service(lambda: self.ws_handler.tts_service)
         self.project_root = Path(".").resolve()
         
         # Add global CORS middleware
@@ -204,6 +222,174 @@ class DigiHumanWebSocketServer:
                     "mode": payload.mode,
                     "voice_prompt_path": payload.voice_prompt_path or None,
                 }
+
+        @self.app.get("/api/study-assistant/status")
+        async def study_assistant_status(request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再查看学习助手。"}
+            return {
+                "status": "ok",
+                "data": self.study_assistant.get_status(),
+            }
+
+        @self.app.post("/api/study-assistant/bootstrap")
+        async def study_assistant_bootstrap(request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再初始化学习助手知识库。"}
+            self.study_assistant.bootstrap_result = self.study_assistant.knowledge_store.bootstrap(
+                self.study_assistant._default_knowledge_items()
+            )
+            return {
+                "status": "ok",
+                "data": self.study_assistant.bootstrap_result,
+            }
+
+        @self.app.post("/api/study-assistant/import-knowledge")
+        async def study_assistant_import_knowledge(request: Request, files: list[UploadFile] = File(...)):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再上传知识文件。"}
+
+            saved_paths: list[Path] = []
+            imported_files: list[str] = []
+            skipped_files: list[dict] = []
+            KNOWLEDGE_ROOT.mkdir(parents=True, exist_ok=True)
+
+            for upload in files:
+                filename = Path(upload.filename or "").name
+                suffix = Path(filename).suffix.lower()
+                if not filename or suffix not in SUPPORTED_EXTENSIONS:
+                    skipped_files.append(
+                        {
+                            "name": upload.filename or "",
+                            "reason": f"仅支持 {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+                        }
+                    )
+                    continue
+
+                target = KNOWLEDGE_ROOT / filename
+                content = await upload.read()
+                target.write_bytes(content)
+                saved_paths.append(target)
+                imported_files.append(filename)
+
+            if not saved_paths:
+                return {
+                    "status": "error",
+                    "message": "没有可导入的知识文件。",
+                    "skipped_files": skipped_files,
+                }
+
+            items = iter_knowledge_items_from_paths(saved_paths)
+            result = self.study_assistant.knowledge_store.import_items(items, replace=True)
+            return {
+                "status": "ok",
+                "data": result,
+                "imported_files": imported_files,
+                "skipped_files": skipped_files,
+            }
+
+        @self.app.get("/api/study-assistant/knowledge-file-preview")
+        async def study_assistant_preview_knowledge_file(request: Request, relative_path: str):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再预览知识文件。"}
+
+            try:
+                target = resolve_relative_knowledge_path(relative_path, KNOWLEDGE_ROOT)
+            except ValueError:
+                return {"status": "error", "message": "知识文件路径非法。"}
+
+            if not target.exists() or not target.is_file():
+                return {"status": "error", "message": "知识文件不存在。"}
+
+            try:
+                raw_text = target.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                raw_text = target.read_text(encoding="utf-8", errors="replace")
+
+            suffix = target.suffix.lower()
+            if suffix == ".json":
+                try:
+                    raw_text = json.dumps(json.loads(raw_text), ensure_ascii=False, indent=2)
+                except json.JSONDecodeError:
+                    pass
+
+            return {
+                "status": "ok",
+                "data": {
+                    "name": target.name,
+                    "relative_path": target.relative_to(KNOWLEDGE_ROOT.resolve()).as_posix(),
+                    "suffix": suffix,
+                    "content": raw_text,
+                },
+            }
+
+        @self.app.delete("/api/study-assistant/knowledge-file")
+        async def study_assistant_delete_knowledge_file(request: Request, relative_path: str, mode: str = "local_only"):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再删除知识文件。"}
+
+            try:
+                target = resolve_relative_knowledge_path(relative_path, KNOWLEDGE_ROOT)
+            except ValueError:
+                return {"status": "error", "message": "知识文件路径非法。"}
+
+            if not target.exists() or not target.is_file():
+                return {"status": "error", "message": "知识文件不存在。"}
+
+            source_key = target.as_posix()
+            deleted_vector_result = None
+
+            if mode == "delete_and_reimport":
+                deleted_vector_result = self.study_assistant.knowledge_store.delete_items_by_source(source_key)
+
+            target.unlink()
+
+            reimport_result = None
+            if mode == "delete_and_reimport":
+                remaining_items = iter_knowledge_items(KNOWLEDGE_ROOT)
+                if remaining_items:
+                    reimport_result = self.study_assistant.knowledge_store.import_items(remaining_items, replace=True)
+                else:
+                    reimport_result = {"status": "ok", "backend": self.study_assistant.knowledge_store.get_status().get("backend"), "count": 0}
+
+            return {
+                "status": "ok",
+                "relative_path": relative_path,
+                "mode": mode,
+                "deleted_vector_result": deleted_vector_result,
+                "reimport_result": reimport_result,
+            }
+
+        @self.app.post("/api/study-assistant/plan")
+        async def study_assistant_plan(payload: StudyPlanRequest, request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再使用学习助手。"}
+            try:
+                result = self.study_assistant.plan_study(f"user:{user.id}", payload.goal)
+                return {"status": "ok", "data": result}
+            except ValueError as exc:
+                return {"status": "error", "message": str(exc)}
+
+        @self.app.post("/api/study-assistant/execute")
+        async def study_assistant_execute(payload: StudyToolRequest, request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再执行学习助手工具。"}
+            try:
+                result = await self.study_assistant.execute_tool(
+                    f"user:{user.id}",
+                    payload.command,
+                    payload.payload or {},
+                )
+                return {"status": "ok", "data": result}
+            except ValueError as exc:
+                return {"status": "error", "message": str(exc)}
 
         @self.app.post("/api/auth/register")
         async def register_api(payload: RegisterRequest):
@@ -359,6 +545,14 @@ class DigiHumanWebSocketServer:
             "/avatars",
             AvatarStaticFiles(directory="avatars"),
             name="avatars",
+        )
+
+        study_music_dir = Path("study_assets/music")
+        study_music_dir.mkdir(parents=True, exist_ok=True)
+        self.app.mount(
+            "/study-music",
+            CORSStaticFiles(directory=str(study_music_dir)),
+            name="study-music",
         )
 
         # Mount web tool directory separately from frontend

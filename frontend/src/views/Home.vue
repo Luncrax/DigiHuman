@@ -1,24 +1,50 @@
 <template>
   <div class="space-y-8">
-    <section class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+    <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <div class="panel-strong rounded-[36px] px-6 py-7 md:px-8 md:py-9">
-        <div class="eyebrow">Local Emotion Pipeline</div>
-        <div class="mt-5 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div class="eyebrow">Multimodal Digital Human</div>
+        <div class="mt-5 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div>
             <h1 class="section-title text-[var(--text)]">
-              让 AI 不只是开口说话，
-              <span class="block text-[var(--accent)]">而是带着情绪出现。</span>
+              支持多模态交互的
+              <span class="block mt-2 text-[var(--accent)]">虚拟数字人助手</span>
             </h1>
             <p class="mt-5 max-w-2xl text-base leading-7 text-[var(--muted)] md:text-lg">
-              这套前端围绕完整链路重做成控制台形态：对话、情绪、Qwen3-TTS、Live2D、嘴型同步和启动自检都能在一套界面里看清楚。
+              主页现在聚焦展示这套系统最核心的能力：对话、语音、情绪、虚拟人表现、知识检索与学习辅助。
+              你可以先从这里快速判断系统状态，再进入主功能页面开始使用。
             </p>
+
             <div class="mt-6 flex flex-wrap gap-3">
               <router-link to="/chat" class="action-btn primary no-underline">
                 进入对话控制台
               </router-link>
-              <router-link to="/dashboard" class="action-btn secondary no-underline">
-                查看运行看板
+              <router-link to="/study-assistant" class="action-btn secondary no-underline">
+                打开学习助手
               </router-link>
+            </div>
+
+            <div class="mt-8 grid gap-4 sm:grid-cols-3">
+              <div class="metric-card panel-outline rounded-[24px]">
+                <div class="feature-kicker">Conversation</div>
+                <div class="mt-3 text-xl font-extrabold text-[var(--text)]">文本 + 语音</div>
+                <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  支持文本输入、语音输入、流式回复与语音播报。
+                </p>
+              </div>
+              <div class="metric-card panel-outline rounded-[24px]">
+                <div class="feature-kicker">Emotion</div>
+                <div class="mt-3 text-xl font-extrabold text-[var(--text)]">情绪驱动</div>
+                <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  识别情绪并统一编排文本、语音和角色表现。
+                </p>
+              </div>
+              <div class="metric-card panel-outline rounded-[24px]">
+                <div class="feature-kicker">Knowledge</div>
+                <div class="mt-3 text-xl font-extrabold text-[var(--text)]">知识增强</div>
+                <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  结合 SQLite 与 Milvus 支撑历史、配置和学习知识检索。
+                </p>
+              </div>
             </div>
           </div>
 
@@ -30,34 +56,46 @@
                 <span class="text-lg font-bold text-[var(--text)]">{{ overallStatusText }}</span>
               </div>
               <p class="mt-4 text-sm leading-6 text-[var(--muted)]">
-                启动自检会直接检查 LLM、Qwen3-TTS、ASR、Live2D 和 WebSocket，不再需要分散到多个页面里判断。
+                自检会同时检查 LLM、TTS、ASR、Live2D 和 WebSocket，
+                首页会把这些核心模块的状态集中展示出来。
               </p>
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
               <div class="metric-card panel-outline rounded-[24px]">
                 <div class="feature-kicker">Voice Engine</div>
-                <div class="metric-value mt-3 text-[var(--text)]">{{ qwenState }}</div>
-                <p class="mt-2 text-sm text-[var(--muted)]">Qwen3-TTS 情绪语音输出状态</p>
+                <div class="metric-value mt-3 text-[var(--text)]">{{ ttsState }}</div>
+                <p class="mt-2 text-sm text-[var(--muted)]">当前语音合成链路状态</p>
               </div>
               <div class="metric-card panel-outline rounded-[24px]">
                 <div class="feature-kicker">Avatar Stage</div>
                 <div class="metric-value mt-3 text-[var(--text)]">{{ live2dState }}</div>
-                <p class="mt-2 text-sm text-[var(--muted)]">Pixi Live2D 舞台与状态机</p>
+                <p class="mt-2 text-sm text-[var(--muted)]">虚拟人舞台与状态机状态</p>
               </div>
+            </div>
+
+            <div class="feature-card panel-outline rounded-[28px]">
+              <div class="feature-kicker">Recommended Start</div>
+              <div class="mt-2 text-xl font-extrabold text-[var(--text)]">建议先进入对话控制台</div>
+              <p class="mt-3 text-sm leading-6 text-[var(--muted)]">
+                如果你想最快体验完整主链路，请先进入对话控制台；
+                如果你要导入学习资料、启动番茄钟或播放音乐，再进入学习助手。
+              </p>
             </div>
           </div>
         </div>
       </div>
 
       <div class="panel rounded-[36px] p-6 md:p-7">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-4">
           <div>
             <div class="feature-kicker">Pipeline</div>
-            <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">完整功能链路</h2>
+            <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">
+              系统主链路
+            </h2>
           </div>
           <button class="action-btn secondary" type="button" :disabled="healthLoading" @click="fetchHealthDetail">
-            {{ healthLoading ? '刷新中...' : '更新状态' }}
+            {{ healthLoading ? '刷新中...' : '刷新状态' }}
           </button>
         </div>
 
@@ -78,12 +116,14 @@
       </div>
     </section>
 
-    <section class="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+    <section class="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
       <div class="panel rounded-[34px] p-6 md:p-7">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-4">
           <div>
             <div class="feature-kicker">Quick Access</div>
-            <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">核心功能入口</h2>
+            <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">
+              核心入口
+            </h2>
           </div>
           <router-link to="/settings" class="text-sm font-semibold text-[var(--accent)] no-underline">
             查看自检
@@ -108,9 +148,16 @@
       </div>
 
       <div class="panel-strong rounded-[34px] p-6 md:p-7">
-        <div>
-          <div class="feature-kicker">Module Snapshot</div>
-          <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">当前模块状态</h2>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <div class="feature-kicker">Module Snapshot</div>
+            <h2 class="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-[var(--text)]">
+              当前模块状态
+            </h2>
+          </div>
+          <router-link to="/database" class="text-sm font-semibold text-[var(--accent)] no-underline">
+            查看数据库
+          </router-link>
         </div>
 
         <div class="mt-6 grid gap-4 sm:grid-cols-2">
@@ -140,7 +187,8 @@ import {
   Connection,
   DataLine,
   MagicStick,
-  Opportunity,
+  Microphone,
+  Reading,
   Service,
   Setting,
 } from '@element-plus/icons-vue'
@@ -160,21 +208,28 @@ const featureCards = [
     to: '/chat',
     kicker: 'Conversation',
     title: '对话控制台',
-    description: '统一处理文本对话、语音输入、情绪驱动、TTS 参数和 Live2D 联动，不再拆成多个弱页面。',
+    description: '集中体验文本对话、语音输入、流式回复、语音播报和 Live2D 联动。',
     icon: ChatLineRound,
+  },
+  {
+    to: '/study-assistant',
+    kicker: 'Study Assistant',
+    title: '学习助手',
+    description: '生成学习计划，调用番茄钟、音乐播放和知识文件导入能力。',
+    icon: Reading,
   },
   {
     to: '/dashboard',
     kicker: 'Runtime',
     title: '运行看板',
-    description: '集中查看链路健康、自检结果、模块细节和系统能力现状。',
+    description: '查看模块级健康状态、运行快照和主要链路当前可用性。',
     icon: DataLine,
   },
   {
-    to: '/settings',
-    kicker: 'Startup Health',
-    title: '启动自检',
-    description: '在一个页面里确认 LLM、Qwen3-TTS、ASR、Live2D 与 WebSocket 是否准备完成。',
+    to: '/character',
+    kicker: 'Persona',
+    title: '角色配置',
+    description: '配置 system prompt、情绪表达风格，并测试当前语音输出效果。',
     icon: Setting,
   },
 ]
@@ -182,32 +237,32 @@ const featureCards = [
 const pipelineSteps = [
   {
     kicker: 'Step 1',
-    title: '用户输入进入对话链路',
-    description: '文字或语音都从 WebSocket 进入后端，再交给统一的对话处理路径。',
-    icon: Connection,
+    title: '用户输入进入统一交互入口',
+    description: '文本和语音输入都会先进入同一条后端链路，避免多套逻辑分叉。',
+    icon: Microphone,
   },
   {
     kicker: 'Step 2',
-    title: 'LLM 生成内容并做情绪分析',
-    description: '保留现有 LLM 情感分析，输出标准化情绪名称和强度，用于后续所有表现层。',
-    icon: Opportunity,
+    title: 'LLM 理解上下文并生成回复',
+    description: '系统会结合历史会话、角色设定和情绪风格，生成当前轮次的自然语言回复。',
+    icon: Connection,
   },
   {
     kicker: 'Step 3',
-    title: 'Emotion Controller 编排输出',
-    description: '把情绪转换成文本增强、Qwen 指令、TTS 参数和 Live2D 参数，不再散落在各模块里。',
+    title: 'Emotion Controller 统一编排表现',
+    description: '把情绪结果映射为文本表达、语音参数和虚拟人动作控制，不再散落处理。',
     icon: MagicStick,
   },
   {
     kicker: 'Step 4',
-    title: 'Qwen3-TTS 和 Live2D 同步表现',
-    description: 'Qwen 输出情绪语音，前端用状态机和音频嘴型同步，把情绪真的演出来。',
+    title: '语音输出与 Live2D 同步表现',
+    description: '前端负责语音播放、嘴型同步和状态机切换，让虚拟人真正说出来并动起来。',
     icon: Service,
   },
 ]
 
-const qwenState = computed(() => {
-  const service = sortedServices.value.find((item) => item.key === 'qwen_tts')
+const ttsState = computed(() => {
+  const service = sortedServices.value.find((item) => item.key === 'qwen_tts' || item.key === 'tts')
   return service?.statusText || '未知'
 })
 

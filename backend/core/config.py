@@ -61,6 +61,7 @@ class Config(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
+    MILVUS_STUDY_COLLECTION: str = "study_plans"
     
     # Frontend settings
     FRONTEND_URL: str = "http://localhost:3000"

@@ -64,6 +64,7 @@ import {
   DataLine,
   HomeFilled,
   Moon,
+  Reading,
   Setting,
   Sunny,
   User,
@@ -81,6 +82,7 @@ const { currentUser, authToken, clearAuthSession } = useAuth()
 const navItems = [
   { path: '/', label: '总览', icon: HomeFilled },
   { path: '/chat', label: '对话控制台', icon: ChatLineRound },
+  { path: '/study-assistant', label: '学习助手', icon: Reading },
   { path: '/dashboard', label: '运行看板', icon: DataLine },
   { path: '/memory', label: '会话总览', icon: Collection },
   { path: '/character', label: '角色配置', icon: User },

@@ -24,6 +24,11 @@ const routes = [
     component: () => import('../views/Dashboard.vue')
   },
   {
+    path: '/study-assistant',
+    name: 'StudyAssistant',
+    component: () => import('../views/StudyAssistant.vue')
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/Settings.vue')
@@ -52,7 +57,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const { isAuthenticated } = useAuth()
-  const protectedRoutes = ['/chat', '/character', '/dashboard', '/memory', '/database']
+  const protectedRoutes = ['/chat', '/character', '/dashboard', '/memory', '/database', '/study-assistant']
 
   if (protectedRoutes.includes(to.path) && !isAuthenticated.value) {
     return '/login'

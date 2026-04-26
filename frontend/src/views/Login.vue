@@ -55,6 +55,20 @@ const form = reactive({
   password: '',
 })
 
+const parseJsonResponse = async (response) => {
+  const raw = await response.text()
+  if (!raw.trim()) {
+    throw new Error('后端没有返回有效内容，请检查服务是否正常启动。')
+  }
+
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    const short = raw.slice(0, 120)
+    throw new Error(`后端返回了非 JSON 内容：${short}`)
+  }
+}
+
 const submit = async () => {
   if (!form.username.trim() || !form.password.trim()) {
     ElMessage.warning('请输入用户名和密码。')
@@ -76,7 +90,7 @@ const submit = async () => {
       }),
     })
 
-    const data = await response.json()
+    const data = await parseJsonResponse(response)
     if (data.status !== 'ok') {
       throw new Error(data.message || '认证失败。')
     }

@@ -13,7 +13,7 @@ const STATUS_TEXT = {
   unknown: '未知',
 }
 
-const serviceOrder = ['llm', 'qwen_tts', 'asr', 'live2d', 'websocket']
+const serviceOrder = ['llm', 'qwen_tts', 'tts', 'asr', 'live2d', 'websocket']
 
 const toTagType = (status) => {
   if (status === 'healthy') return 'success'
