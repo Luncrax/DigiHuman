@@ -1,22 +1,44 @@
-# Python_pycache__/.py[cod]$py.class
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
 
-# Environment.env
+# Environment
+.env
 .env.local
 .env.*.local
+.env_production
+*.pem
 
 # Dependencies
 node_modules/
 .pnpm-lock.yaml
 package-lock.json
+yarn.lock
 
-# Buildist/
-build/
+# Build
+*.tsbuildinfo
+dist/
+dist-ssr/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
 # Testing
 coverage/
 .coverage
 .coverage.*
 .pytest_cache/
+.nyc_output/
 
 # IDE
 .vscode/
@@ -24,35 +46,90 @@ coverage/
 *.swp
 *.swo
 *~
-
-# OS
-Thumbs.db
 .DS_Store
+Thumbs.db
 
 # Models
 models/
 open-llm-vtuber/
+vosk-model-small-cn-0.22/
 vosk-model-small-cn-0.22.zip
+*.model
+*.moc3
+*.motion3.json
+*.exp3.json
+
+# Live2D
+live2d-models/
+*.png
+!frontend/public/live2d_models/**/*.png
 
 # Audio files
 *.wav
 *.mp3
+*.ogg
+*.flac
+cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
 
 # Logs
+logs/
 *.log
+log/
+app.log
 
 # Temporary files
 *.tmp
 *.temp
+tmp/
+temp/
 
-# Git
+# Chat memory (personal data)
+chat_memory/
+chat_history/
+!chat_history/.gitkeep
+!chat_memory/.gitkeep
+
+# Backups
+backups/
+*.bak
+*.backup
+
+# Milvus (vector database data)
+milvus_data/
+
+# Qwen/TTS models
+qwen3-tts-weights/
+*.pt
+!backend/tts/voice_clone_prompt_wzc.pt
+
+# Secrets
+*.key
+*.crt
+*.pem
+credentials.json
+secrets.json
+
+# Git (exclude itself but keep other git info)
 .git/
+!.gitignore
 
-# Executables
-*.exe
+# Claude specific
+.claude/
+
+# Frontend build output
+*.local
+.env.production
+
+# Vendor files (if not needed)
+frontend/public/vendor/
 
 # Test files
 test_*.py
-
-# Report files
-*.md
+*_test.py
+tests/
