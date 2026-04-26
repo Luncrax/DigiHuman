@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
+import { useAuth } from '../composables/useAuth'
 
 const routes = [
   {
@@ -31,12 +32,37 @@ const routes = [
     path: '/memory',
     name: 'Memory',
     component: () => import('../views/Memory.vue')
+  },
+  {
+    path: '/database',
+    name: 'Database',
+    component: () => import('../views/Database.vue')
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/Login.vue')
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach((to) => {
+  const { isAuthenticated } = useAuth()
+  const protectedRoutes = ['/chat', '/character', '/dashboard', '/memory', '/database']
+
+  if (protectedRoutes.includes(to.path) && !isAuthenticated.value) {
+    return '/login'
+  }
+
+  if (to.path === '/login' && isAuthenticated.value) {
+    return '/chat'
+  }
+
+  return true
 })
 
 export default router

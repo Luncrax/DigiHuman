@@ -152,6 +152,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useAuth } from '../composables/useAuth'
+
+const { currentUser, getAuthHeaders } = useAuth()
 
 const loading = ref(false)
 const healthDetail = reactive({
@@ -183,7 +186,8 @@ const parseJsonResponse = async (response, fallbackMessage) => {
 
 const parseLocalMessages = () => {
   try {
-    const raw = localStorage.getItem('digiHuman_messages_v2')
+    const clientId = localStorage.getItem('digiHuman_clientId') || (currentUser.value?.client_id || 'guest')
+    const raw = localStorage.getItem(`digiHuman_messages_v2_${clientId}`)
     const parsed = JSON.parse(raw || '[]')
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -193,7 +197,7 @@ const parseLocalMessages = () => {
 
 const sessionSummary = computed(() => {
   const clientId = localStorage.getItem('digiHuman_clientId') || '未建立'
-  const currentHistoryUid = localStorage.getItem('digiHuman_currentHistoryUid') || '未绑定'
+  const currentHistoryUid = localStorage.getItem(`digiHuman_currentHistoryUid_${clientId}`) || '未绑定'
   const messages = parseLocalMessages()
   const latest = messages[messages.length - 1]
 
@@ -218,7 +222,11 @@ const healthServices = computed(() => {
 })
 
 const loadCharacterConfig = async () => {
-  const response = await fetch('/api/character-config')
+  const response = await fetch('/api/character-config', {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  })
   const data = await parseJsonResponse(response, '角色配置接口返回格式错误')
   characterConfig.llm_system_prompt = data.config?.llm_system_prompt || ''
   characterConfig.emotion_style = data.config?.emotion_style || ''
@@ -232,12 +240,16 @@ const loadHealthDetail = async () => {
 
 const loadOverview = async () => {
   const clientId = localStorage.getItem('digiHuman_clientId') || ''
-  const currentHistoryUid = localStorage.getItem('digiHuman_currentHistoryUid') || ''
+  const currentHistoryUid = localStorage.getItem(`digiHuman_currentHistoryUid_${clientId || (currentUser.value?.client_id || 'guest')}`) || ''
   const params = new URLSearchParams({
-    client_id: clientId,
+    client_id: clientId || (currentUser.value?.client_id || ''),
     current_history_uid: currentHistoryUid,
   })
-  const response = await fetch(`/api/session-overview?${params.toString()}`)
+  const response = await fetch(`/api/session-overview?${params.toString()}`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  })
   const data = await parseJsonResponse(response, '会话总览接口返回格式错误')
   overview.client_id = data.client_id || ''
   overview.current_history_uid = data.current_history_uid || ''

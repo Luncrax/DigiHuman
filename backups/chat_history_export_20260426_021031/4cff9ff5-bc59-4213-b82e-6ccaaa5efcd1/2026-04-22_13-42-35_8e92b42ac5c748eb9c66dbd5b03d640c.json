@@ -1,0 +1,34 @@
+[
+  {
+    "role": "metadata",
+    "timestamp": "2026-04-22T13:42:35"
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-22T13:42:43",
+    "content": "你好，这是一个测试消息",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-22T13:42:43",
+    "content": "抱歉，我在处理您的消息时遇到了问题。请稍后再试。",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-22T13:43:12",
+    "content": "你好，这是一个测试消息",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-22T13:43:12",
+    "content": "抱歉，我在处理您的消息时遇到了问题。请稍后再试。",
+    "name": null,
+    "avatar": null
+  }
+]

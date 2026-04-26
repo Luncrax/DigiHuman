@@ -219,6 +219,9 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuth } from '../composables/useAuth'
+
+const { getAuthHeaders } = useAuth()
 
 const characterConfig = reactive({
   llm_system_prompt: '',
@@ -333,7 +336,11 @@ const requestTTSTest = async (payload) => {
 const loadCharacterConfig = async () => {
   configLoading.value = true
   try {
-    const response = await fetch('/api/character-config')
+    const response = await fetch('/api/character-config', {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
     const data = await parseJsonResponse(response, '角色配置接口返回格式错误')
     const config = data.config || {}
     characterConfig.llm_system_prompt = config.llm_system_prompt || ''
@@ -352,6 +359,7 @@ const saveCharacterConfig = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({
         llm_system_prompt: characterConfig.llm_system_prompt,

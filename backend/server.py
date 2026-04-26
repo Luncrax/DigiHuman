@@ -10,7 +10,7 @@ import base64
 import urllib.error
 import urllib.request
 from pathlib import Path
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -19,6 +19,8 @@ from pydantic import BaseModel
 from backend.ws_handler import WebSocketHandler
 from backend.character_config import CharacterConfig, get_character_config_store
 from backend.core.config import config
+from backend.auth import extract_bearer_token, get_current_user_from_authorization
+from backend.sqlite_store import get_sqlite_store
 from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -40,6 +42,16 @@ class TTSTestRequest(BaseModel):
 class CharacterConfigRequest(BaseModel):
     llm_system_prompt: str = ""
     emotion_style: str = ""
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -111,9 +123,11 @@ class DigiHumanWebSocketServer:
                 logger.info("WebSocket connection accepted")
                 # 调用 WebSocket 处理器
                 requested_client_uid = websocket.query_params.get("client_id")
+                auth_token = websocket.query_params.get("auth_token")
                 await self.ws_handler.handle_new_connection(
                     websocket,
                     requested_client_uid=requested_client_uid,
+                    auth_token=auth_token,
                 )
                 logger.info("WebSocket connection established successfully")
                 await self.ws_handler.handle_messages(websocket)
@@ -191,16 +205,100 @@ class DigiHumanWebSocketServer:
                     "voice_prompt_path": payload.voice_prompt_path or None,
                 }
 
-        @self.app.get("/api/character-config")
-        async def get_character_config_api():
+        @self.app.post("/api/auth/register")
+        async def register_api(payload: RegisterRequest):
+            try:
+                user = get_sqlite_store().register_user(payload.username, payload.password)
+                _, token = get_sqlite_store().login_user(payload.username, payload.password)
+                return {
+                    "status": "ok",
+                    "token": token,
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "client_id": f"user:{user.id}",
+                    },
+                }
+            except ValueError as exc:
+                return {"status": "error", "message": str(exc)}
+
+        @self.app.post("/api/auth/login")
+        async def login_api(payload: LoginRequest):
+            try:
+                user, token = get_sqlite_store().login_user(payload.username, payload.password)
+                return {
+                    "status": "ok",
+                    "token": token,
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "client_id": f"user:{user.id}",
+                    },
+                }
+            except ValueError as exc:
+                return {"status": "error", "message": str(exc)}
+
+        @self.app.get("/api/auth/me")
+        async def me_api(request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "未登录。"}
             return {
                 "status": "ok",
-                "config": get_character_config_store().to_dict(),
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "client_id": f"user:{user.id}",
+                },
+            }
+
+        @self.app.post("/api/auth/logout")
+        async def logout_api(request: Request):
+            token = extract_bearer_token(request.headers.get("authorization"))
+            get_sqlite_store().logout_token(token)
+            return {"status": "ok"}
+
+        @self.app.get("/api/debug/db-summary")
+        async def db_summary_api(request: Request, limit: int = 20):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再查看数据库面板。"}
+            return {
+                "status": "ok",
+                "snapshot": get_sqlite_store().get_debug_snapshot(limit=limit),
+            }
+
+        @self.app.get("/api/character-config")
+        async def get_character_config_api(request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            owner_uid = f"user:{user.id}" if user else "guest"
+            return {
+                "status": "ok",
+                "config": get_character_config_store(owner_uid).to_dict(),
+            }
+
+        @self.app.delete("/api/debug/histories/{history_uid}")
+        async def delete_history_api(history_uid: str, request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            if not user:
+                return {"status": "error", "message": "请先登录后再删除会话。"}
+
+            owner_uid = f"user:{user.id}"
+            deleted = get_sqlite_store().delete_history(owner_uid, history_uid)
+            if not deleted:
+                return {"status": "error", "message": "未找到该会话，或你没有权限删除它。"}
+
+            return {
+                "status": "ok",
+                "history_uid": history_uid,
+                "owner_uid": owner_uid,
             }
 
         @self.app.post("/api/character-config")
-        async def save_character_config_api(payload: CharacterConfigRequest):
-            saved = get_character_config_store().save(
+        async def save_character_config_api(payload: CharacterConfigRequest, request: Request):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            owner_uid = f"user:{user.id}" if user else "guest"
+            saved = get_character_config_store(owner_uid).save(
                 CharacterConfig(
                     llm_system_prompt=(payload.llm_system_prompt or "").strip(),
                     emotion_style=(payload.emotion_style or "").strip(),
@@ -215,8 +313,9 @@ class DigiHumanWebSocketServer:
             }
 
         @self.app.get("/api/session-overview")
-        async def session_overview(client_id: str = "", current_history_uid: str = ""):
-            safe_client_id = (client_id or "").strip()
+        async def session_overview(request: Request, client_id: str = "", current_history_uid: str = ""):
+            user = get_current_user_from_authorization(request.headers.get("authorization"))
+            safe_client_id = (client_id or "").strip() or (f"user:{user.id}" if user else "")
             safe_history_uid = (current_history_uid or "").strip()
 
             histories = self.ws_handler.history_manager.get_history_list(safe_client_id) if safe_client_id else []

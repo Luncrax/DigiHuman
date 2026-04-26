@@ -1,0 +1,20 @@
+[
+  {
+    "role": "metadata",
+    "timestamp": "2026-04-26T00:10:55"
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-26T00:11:02",
+    "content": "我好害怕",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-26T00:11:02",
+    "content": "别怕，我在这里。可以告诉我是什么让你感到害怕吗？",
+    "name": null,
+    "avatar": null
+  }
+]

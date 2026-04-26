@@ -1,0 +1,20 @@
+[
+  {
+    "role": "metadata",
+    "timestamp": "2026-04-25T17:53:19"
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-25T17:53:34",
+    "content": "我恨你",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-25T17:53:34",
+    "content": "我能感受到你现在很生气，可能是我刚才的回答让你失望了。如果有什么地方让你不开心，请告诉我，我会尽力改进和帮助你。你的感受很重要，我愿意倾听并一起解决问题。",
+    "name": null,
+    "avatar": null
+  }
+]

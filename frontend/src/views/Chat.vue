@@ -215,6 +215,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAudioRecorder } from '@/composables/useAudioRecorder'
+import { useAuth } from '@/composables/useAuth'
 
 const defaultAssistantMessage = {
   id: 'welcome-message',
@@ -246,7 +247,8 @@ const currentEmotion = ref({
 })
 
 const activeResponseId = ref(null)
-const clientId = ref(localStorage.getItem('digiHuman_clientId') || '')
+const { authToken, currentUser, getAuthHeaders } = useAuth()
+const clientId = ref(localStorage.getItem('digiHuman_clientId') || (currentUser.value?.client_id || ''))
 const isRecording = ref(false)
 
 let ws = null
@@ -320,16 +322,19 @@ const emotionLabel = (emotion) => {
 
 const makeId = (prefix = 'msg') => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 
+const getMessageStorageKey = () => `digiHuman_messages_v2_${clientId.value || 'guest'}`
+const getHistoryStorageKey = () => `digiHuman_currentHistoryUid_${clientId.value || 'guest'}`
+
 const saveSession = () => {
-  localStorage.setItem('digiHuman_messages_v2', JSON.stringify(messages.value))
+  localStorage.setItem(getMessageStorageKey(), JSON.stringify(messages.value))
   if (currentHistoryUid.value) {
-    localStorage.setItem('digiHuman_currentHistoryUid', currentHistoryUid.value)
+    localStorage.setItem(getHistoryStorageKey(), currentHistoryUid.value)
   }
 }
 
 const restoreSession = () => {
-  const storedMessages = localStorage.getItem('digiHuman_messages_v2')
-  const storedHistoryUid = localStorage.getItem('digiHuman_currentHistoryUid')
+  const storedMessages = localStorage.getItem(getMessageStorageKey())
+  const storedHistoryUid = localStorage.getItem(getHistoryStorageKey())
 
   if (storedMessages) {
     try {
@@ -396,7 +401,11 @@ const parseJsonResponse = async (response, fallbackMessage) => {
 
 const loadCharacterConfigSummary = async () => {
   try {
-    const response = await fetch('/api/character-config')
+    const response = await fetch('/api/character-config', {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
     const data = await parseJsonResponse(response, '角色配置摘要接口返回格式错误')
     currentCharacterConfig.value = {
       llm_system_prompt: data.config?.llm_system_prompt || '',
@@ -728,7 +737,14 @@ const handleWebSocketMessage = async (data) => {
 
 const connectWebSocket = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const query = clientId.value ? `?client_id=${encodeURIComponent(clientId.value)}` : ''
+  const params = new URLSearchParams()
+  if (clientId.value) {
+    params.set('client_id', clientId.value)
+  }
+  if (authToken.value) {
+    params.set('auth_token', authToken.value)
+  }
+  const query = params.toString() ? `?${params.toString()}` : ''
   const wsUrl = `${protocol}//${window.location.host}/ws${query}`
   ws = new WebSocket(wsUrl)
 

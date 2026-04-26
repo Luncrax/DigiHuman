@@ -1,0 +1,34 @@
+[
+  {
+    "role": "metadata",
+    "timestamp": "2026-04-25T04:10:24"
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-25T04:10:24",
+    "content": "我恨你",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-25T04:10:24",
+    "content": "\n听到你这么说，我感到很难过。作为你的虚拟助手，我希望能帮助你。你为什么会有这样的感觉呢？可以告诉我更多吗？我会尽力提供帮助。",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "human",
+    "timestamp": "2026-04-25T04:10:24",
+    "content": "没事，我原谅你了",
+    "name": null,
+    "avatar": null
+  },
+  {
+    "role": "ai",
+    "timestamp": "2026-04-25T04:10:24",
+    "content": "\n太好了，很高兴听到你愿意原谅我。我非常乐意继续帮助你。你有什么其他问题或者需要我帮忙的地方吗？",
+    "name": null,
+    "avatar": null
+  }
+]

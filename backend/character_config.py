@@ -1,11 +1,13 @@
 """
-Persistent character configuration for LLM prompt and expression style.
+Persistent character configuration backed by SQLite.
 """
-import json
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from threading import Lock
 from typing import Dict
+
+from backend.request_context import get_current_owner_uid
+from backend.sqlite_store import get_sqlite_store
 
 
 @dataclass
@@ -15,48 +17,33 @@ class CharacterConfig:
 
 
 class CharacterConfigStore:
-    def __init__(self, file_path: Path | None = None):
-        self.file_path = file_path or Path("data/character_config.json")
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = Lock()
+    def __init__(self, owner_uid: str = "guest"):
+        self.owner_uid = owner_uid
+        self.store = get_sqlite_store()
 
     def load(self) -> CharacterConfig:
-        with self._lock:
-            if not self.file_path.exists():
-                return CharacterConfig()
-
-            try:
-                payload = json.loads(self.file_path.read_text(encoding="utf-8"))
-            except Exception:
-                return CharacterConfig()
-
-            return CharacterConfig(
-                llm_system_prompt=str(payload.get("llm_system_prompt", "") or ""),
-                emotion_style=str(payload.get("emotion_style", "") or ""),
-            )
+        payload = self.store.get_character_config(self.owner_uid)
+        return CharacterConfig(
+            llm_system_prompt=str(payload.get("llm_system_prompt", "") or ""),
+            emotion_style=str(payload.get("emotion_style", "") or ""),
+        )
 
     def save(self, config: CharacterConfig) -> CharacterConfig:
-        with self._lock:
-            self.file_path.write_text(
-                json.dumps(asdict(config), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+        self.store.save_character_config(
+            self.owner_uid,
+            config.llm_system_prompt,
+            config.emotion_style,
+        )
         return config
 
     def to_dict(self) -> Dict[str, str]:
         return asdict(self.load())
 
 
-_store: CharacterConfigStore | None = None
+def get_character_config_store(owner_uid: str = "guest") -> CharacterConfigStore:
+    resolved_owner_uid = owner_uid if owner_uid != "guest" else get_current_owner_uid()
+    return CharacterConfigStore(owner_uid=resolved_owner_uid)
 
 
-def get_character_config_store() -> CharacterConfigStore:
-    global _store
-    if _store is None:
-        _store = CharacterConfigStore()
-    return _store
-
-
-def get_character_config() -> CharacterConfig:
-    return get_character_config_store().load()
-
+def get_character_config(owner_uid: str = "guest") -> CharacterConfig:
+    return get_character_config_store(owner_uid).load()
