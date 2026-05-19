@@ -1,0 +1,9 @@
+2026-05-20 00:53:05,598 - backend.langchain.models.llm_service - INFO - __init__:36 - LangChainLLMService initialized with model: glm-4.6v-flash
+2026-05-20 00:53:05,599 - backend.langchain.memory.memory_manager - INFO - __init__:39 - LangChainMemoryManager initialized for session: session_1251927537184
+2026-05-20 00:53:05,600 - backend.langchain.models.llm_service - INFO - __init__:36 - LangChainLLMService initialized with model: glm-4.6v-flash
+2026-05-20 00:53:05,601 - backend.langchain.chains.conversation_chain - INFO - __init__:47 - ConversationChain initialized with custom LLM
+2026-05-20 00:53:05,601 - backend.langchain.tools.base_tools - INFO - __init__:77 - ToolManager initialized with 3 tools
+2026-05-20 00:53:05,601 - backend.langchain.services.dialogue_service - INFO - __init__:28 - LangChainDialogueService initialized
+2026-05-20 00:53:05,603 - backend.emotion.langchain_emotion_analyzer - INFO - __init__:58 - LangChainEmotionAnalyzer initialized
+2026-05-20 00:53:05,603 - backend.live2d.emotion_mapper - INFO - __init__:167 - EmotionActionMapper initialized
+2026-05-20 00:53:19,291 - backend.study_assistant.milvus_store - WARNING - _connect:88 - Milvus unavailable: <MilvusException: (code=2, message=Fail connecting to server on localhost:19530, illegal connection params or server unavailable)>

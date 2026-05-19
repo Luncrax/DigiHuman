@@ -14,12 +14,14 @@ app = server.app
 # Clean cache on startup
 server.clean_cache()
 
+
+
 if __name__ == "__main__":
     import uvicorn
     from backend.core.config import config
     uvicorn.run(
         "backend.main:app",
-        host=config.HOST,
+        host="0.0.0.0",
         port=config.PORT,
         reload=True,
         log_level="info"

@@ -23,7 +23,7 @@ def main():
     # Start the server using uvicorn
     uvicorn.run(
         "backend.main:app",  # Use the app from backend/main.py
-        host=config.HOST,    # Use configured host
+        host="0.0.0.0",    # Use configured host
         port=config.PORT,    # Use configured port
         reload=False,        # Disable auto-reload for development
         log_level="info"     # Set log level

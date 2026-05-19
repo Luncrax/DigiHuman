@@ -11,17 +11,18 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    host: "0.0.0.0",
     proxy: {
       '/ws': {
-        target: 'ws://localhost:8001',
+        target: 'ws://10.0.8.13:8001',
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:8001',
+        target: 'http://10.0.8.13:8001',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8001',
+        target: 'http://10.0.8.13:8001',
         changeOrigin: true,
       },
     },
